@@ -35,7 +35,7 @@ def run_query(query, params=None):
             conn.close()
             return df
         except Exception as e:
-            st.error(fুয়ারিó error en la consulta: {e}")
+            st.error(f"Ocurrió un error en la consulta: {e}")
             conn.close()
             return pd.DataFrame()
     return pd.DataFrame()
