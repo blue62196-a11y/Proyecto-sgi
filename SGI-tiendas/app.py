@@ -1,12 +1,10 @@
 import streamlit as st
 import mysql.connector
 import pandas as pd
-import hashlib 
-
-        if submit:
+import hashlib
+if submit:
             # 1. Encriptamos la contraseña que el usuario tecleó para poder compararla
             hashed_input = hashlib.sha256(password.encode()).hexdigest()
-
             conn = get_connection()
             if conn:
                 cursor = conn.cursor(dictionary=True)
