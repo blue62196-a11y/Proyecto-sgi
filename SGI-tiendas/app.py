@@ -1,6 +1,28 @@
 import streamlit as st
 import mysql.connector
 import pandas as pd
+import hashlib 
+
+        if submit:
+            # 1. Encriptamos la contraseña que el usuario tecleó para poder compararla
+            hashed_input = hashlib.sha256(password.encode()).hexdigest()
+
+            conn = get_connection()
+            if conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("SELECT U.ID_Usuario, U.Nombre, U.ID_Tienda, R.Nombre as Rol, U.Password_Hash FROM usuario U JOIN rol R ON U.ID_Rol = R.ID_Rol WHERE U.Correo = %s", (correo,))
+                user = cursor.fetchone()
+                conn.close()
+                
+                # 2. Validamos que el usuario exista Y que el hash de la BD sea igual al que tecleó
+                if user and user["Password_Hash"] == hashed_input:
+                    st.session_state.logged_in = True
+                    st.session_state.user_name = user["Nombre"]
+                    st.session_state.user_role = user["Rol"]
+                    st.session_state.id_tienda = user["ID_Tienda"]
+                    st.rerun()
+                else:
+                    st.error("Correo o contraseña incorrectos.")
 
 # Configuración inicial de la página
 st.set_page_config(
