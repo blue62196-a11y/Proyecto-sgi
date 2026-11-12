@@ -95,12 +95,20 @@ if st.sidebar.button("Cerrar Sesión"):
     st.rerun()
 
 # --- 4. VISTAS DE LA APLICACIÓN ---
+# Variable para simplificar la lectura del código
+rol = st.session_state.user_role.upper()
+id_tienda = st.session_state.id_tienda
 
 if menu == "📊 Inventario Actual":
-    st.title("📊 Inventario Actual por Tienda")
-    st.markdown("Consulta las existencias actuales de productos basadas en la vista `v_inventario_actual`.")
+    st.title("📊 Inventario Actual")
     
-    df_inventario = run_query("SELECT * FROM v_inventario_actual;")
+    if rol == 'ADMINISTRADOR':
+        st.markdown("Vista global: Existencias de todas las tiendas y el Centro de Distribución.")
+        df_inventario = run_query("SELECT * FROM v_inventario_actual;")
+    else:
+        st.markdown(f"Vista local: Existencias de la Tienda {id_tienda}.")
+        df_inventario = run_query("SELECT * FROM v_inventario_actual WHERE ID_Tienda = %s;", (id_tienda,))
+        
     if not df_inventario.empty:
         st.dataframe(df_inventario, use_container_width=True)
     else:
@@ -108,26 +116,40 @@ if menu == "📊 Inventario Actual":
 
 elif menu == "🚨 Puntos de Reorden":
     st.title("🚨 Control de Puntos de Reorden")
-    st.markdown("Productos que han alcanzado o bajado de su punto de reorden y requieren reposición.")
     
-    df_reorden = run_query("SELECT * FROM v_punto_reorden;")
+    if rol == 'ADMINISTRADOR':
+        st.markdown("Vista global: Productos que requieren reposición en toda la red.")
+        df_reorden = run_query("SELECT * FROM v_punto_reorden;")
+    else:
+        st.markdown(f"Vista local: Productos que requieren reposición en la Tienda {id_tienda}.")
+        df_reorden = run_query("SELECT * FROM v_punto_reorden WHERE ID_Tienda = %s;", (id_tienda,))
+        
     if not df_reorden.empty:
-        # Filtro visual para destacar los que necesitan compra urgente
         st.dataframe(df_reorden, use_container_width=True)
     else:
         st.info("No hay datos de punto de reorden.")
 
 elif menu == "💰 Ventas Totales":
     st.title("💰 Historial de Ventas")
-    df_ventas = run_query("SELECT * FROM v_venta_total ORDER BY Fecha_Venta DESC;")
+    
+    if rol == 'ADMINISTRADOR':
+        df_ventas = run_query("SELECT * FROM v_venta_total ORDER BY Fecha_Venta DESC;")
+    else:
+        df_ventas = run_query("SELECT * FROM v_venta_total WHERE ID_Tienda = %s ORDER BY Fecha_Venta DESC;", (id_tienda,))
+        
     if not df_ventas.empty:
         st.dataframe(df_ventas, use_container_width=True)
     else:
         st.info("No hay ventas registradas.")
 
 elif menu == "📦 Compras Totales":
-    st.title("📦 Historial de Compras a Proveedores")
-    df_compras = run_query("SELECT * FROM v_compra_total ORDER BY Fecha_Compra DESC;")
+    st.title("📦 Historial de Compras")
+    
+    if rol == 'ADMINISTRADOR':
+        df_compras = run_query("SELECT * FROM v_compra_total ORDER BY Fecha_Compra DESC;")
+    else:
+        df_compras = run_query("SELECT * FROM v_compra_total WHERE ID_Tienda = %s ORDER BY Fecha_Compra DESC;", (id_tienda,))
+        
     if not df_compras.empty:
         st.dataframe(df_compras, use_container_width=True)
     else:
