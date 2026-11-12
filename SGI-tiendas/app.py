@@ -2,25 +2,6 @@ import streamlit as st
 import mysql.connector
 import pandas as pd
 import hashlib
-if submit:
-            # 1. Encriptamos la contraseña que el usuario tecleó para poder compararla
-            hashed_input = hashlib.sha256(password.encode()).hexdigest()
-            conn = get_connection()
-            if conn:
-                cursor = conn.cursor(dictionary=True)
-                cursor.execute("SELECT U.ID_Usuario, U.Nombre, U.ID_Tienda, R.Nombre as Rol, U.Password_Hash FROM usuario U JOIN rol R ON U.ID_Rol = R.ID_Rol WHERE U.Correo = %s", (correo,))
-                user = cursor.fetchone()
-                conn.close()
-                
-                # 2. Validamos que el usuario exista Y que el hash de la BD sea igual al que tecleó
-                if user and user["Password_Hash"] == hashed_input:
-                    st.session_state.logged_in = True
-                    st.session_state.user_name = user["Nombre"]
-                    st.session_state.user_role = user["Rol"]
-                    st.session_state.id_tienda = user["ID_Tienda"]
-                    st.rerun()
-                else:
-                    st.error("Correo o contraseña incorrectos.")
 
 # Configuración inicial de la página
 st.set_page_config(
@@ -33,8 +14,6 @@ st.set_page_config(
 def get_connection():
     """Establece la conexión con la base de datos MySQL."""
     try:
-        # Si usas Streamlit Cloud, los datos se leen de st.secrets. 
-        # Si estás en local, puedes cambiar los valores por defecto o usar un archivo .streamlit/secrets.toml
         return mysql.connector.connect(
             host=st.secrets.get("DB_HOST", "localhost"),
             user=st.secrets.get("DB_USER", "root"),
@@ -77,13 +56,9 @@ if not st.session_state.logged_in:
         submit = st.form_submit_button("Ingresar")
         
         if submit:
-            query = """
-                U.ID_Usuario, U.Nombre, U.ID_Tienda, R.Nombre as Rol 
-                FROM usuario U 
-                JOIN rol R ON U.ID_Rol = R.ID_Rol 
-                WHERE U.Correo = %s AND U.Estado_Usuario = 'ACTIVO'
-            """
-            # Nota: Para producción recuerda verificar el hash de la contraseña.
+            # 1. Encriptamos la contraseña que el usuario tecleó para compararla
+            hashed_input = hashlib.sha256(password.encode()).hexdigest()
+
             conn = get_connection()
             if conn:
                 cursor = conn.cursor(dictionary=True)
@@ -91,7 +66,8 @@ if not st.session_state.logged_in:
                 user = cursor.fetchone()
                 conn.close()
                 
-                if user:
+                # 2. Validamos que el usuario exista y que el hash coincida
+                if user and user["Password_Hash"] == hashed_input:
                     st.session_state.logged_in = True
                     st.session_state.user_name = user["Nombre"]
                     st.session_state.user_role = user["Rol"]
@@ -115,7 +91,7 @@ if st.sidebar.button("Cerrar Sesión"):
     st.rerun()
 
 # --- 4. VISTAS DE LA APLICACIÓN ---
-# Variable para simplificar la lectura del código
+# Variables para simplificar la lectura del código
 rol = st.session_state.user_role.upper()
 id_tienda = st.session_state.id_tienda
 
@@ -126,51 +102,4 @@ if menu == "📊 Inventario Actual":
         st.markdown("Vista global: Existencias de todas las tiendas y el Centro de Distribución.")
         df_inventario = run_query("SELECT * FROM v_inventario_actual;")
     else:
-        st.markdown(f"Vista local: Existencias de la Tienda {id_tienda}.")
-        df_inventario = run_query("SELECT * FROM v_inventario_actual WHERE ID_Tienda = %s;", (id_tienda,))
-        
-    if not df_inventario.empty:
-        st.dataframe(df_inventario, use_container_width=True)
-    else:
-        st.info("No hay registros de inventario disponibles.")
-
-elif menu == "🚨 Puntos de Reorden":
-    st.title("🚨 Control de Puntos de Reorden")
-    
-    if rol == 'ADMINISTRADOR':
-        st.markdown("Vista global: Productos que requieren reposición en toda la red.")
-        df_reorden = run_query("SELECT * FROM v_punto_reorden;")
-    else:
-        st.markdown(f"Vista local: Productos que requieren reposición en la Tienda {id_tienda}.")
-        df_reorden = run_query("SELECT * FROM v_punto_reorden WHERE ID_Tienda = %s;", (id_tienda,))
-        
-    if not df_reorden.empty:
-        st.dataframe(df_reorden, use_container_width=True)
-    else:
-        st.info("No hay datos de punto de reorden.")
-
-elif menu == "💰 Ventas Totales":
-    st.title("💰 Historial de Ventas")
-    
-    if rol == 'ADMINISTRADOR':
-        df_ventas = run_query("SELECT * FROM v_venta_total ORDER BY Fecha_Venta DESC;")
-    else:
-        df_ventas = run_query("SELECT * FROM v_venta_total WHERE ID_Tienda = %s ORDER BY Fecha_Venta DESC;", (id_tienda,))
-        
-    if not df_ventas.empty:
-        st.dataframe(df_ventas, use_container_width=True)
-    else:
-        st.info("No hay ventas registradas.")
-
-elif menu == "📦 Compras Totales":
-    st.title("📦 Historial de Compras")
-    
-    if rol == 'ADMINISTRADOR':
-        df_compras = run_query("SELECT * FROM v_compra_total ORDER BY Fecha_Compra DESC;")
-    else:
-        df_compras = run_query("SELECT * FROM v_compra_total WHERE ID_Tienda = %s ORDER BY Fecha_Compra DESC;", (id_tienda,))
-        
-    if not df_compras.empty:
-        st.dataframe(df_compras, use_container_width=True)
-    else:
-        st.info("No hay compras registradas.")
+        st.markdown(f"Vista local: Existencias de la Tienda {
