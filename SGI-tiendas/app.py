@@ -46,6 +46,7 @@ if "logged_in" not in st.session_state:
     st.session_state.user_name = ""
     st.session_state.user_role = ""
     st.session_state.id_tienda = None
+    st.session_state.id_usuario = None   
 
 if not st.session_state.logged_in:
     st.title("🔐 SGI - Iniciar Sesión")
@@ -84,11 +85,12 @@ st.sidebar.caption(f"Rol: {st.session_state.user_role}")
 
 menu = st.sidebar.radio(
     "Navegación",
-    ["📊 Inventario Actual", "🚨 Puntos de Reorden", "💰 Ventas Totales", "📦 Compras Totales"]
+    ["📊 Inventario Actual", "🚨 Puntos de Reorden", "💰 Ventas Totales", "📦 Compras Totales",
+ "🧾 Registrar venta"]
 )
 
 if st.sidebar.button("Cerrar Sesión"):
-    st.session_state.logged_in = False
+    st.session_state.clear()
     st.rerun()
 
 # --- 4. VISTAS DE LA APLICACIÓN ---
@@ -140,6 +142,8 @@ elif menu == "💰 Ventas Totales":
 
 elif menu == "📦 Compras Totales":
     st.title("📦 Historial de Compras")
+    elif menu == "🧾 Registrar venta":
+    pantalla_registrar_venta(get_connection)
     
     if rol == 'ADMINISTRADOR':
         df_compras = run_query("SELECT * FROM v_compra_total ORDER BY Fecha_Compra DESC;")
