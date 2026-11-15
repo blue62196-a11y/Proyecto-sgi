@@ -56,6 +56,9 @@ if not st.session_state.logged_in:
         submit = st.form_submit_button("Ingresar")
         
         if submit:
+            # 1. Encriptamos la contraseña que el usuario escribe en la pantalla
+            hashed_input = hashlib.sha256(password.encode()).hexdigest()
+
             conn = get_connection()
             if conn:
                 cursor = conn.cursor(dictionary=True)
@@ -63,8 +66,8 @@ if not st.session_state.logged_in:
                 user = cursor.fetchone()
                 conn.close()
                 
-                # PUERTA TRASERA: Si el correo existe, "1234" te deja entrar siempre
-                if user and (password == "1234" or user["Password_Hash"] == password):
+                # 2. Comparamos de forma segura: Hash contra Hash
+                if user and user["Password_Hash"] == hashed_input:
                     st.session_state.logged_in = True
                     st.session_state.user_name = user["Nombre"]
                     st.session_state.user_role = user["Rol"]
@@ -88,7 +91,6 @@ if st.sidebar.button("Cerrar Sesión"):
     st.rerun()
 
 # --- 4. VISTAS DE LA APLICACIÓN ---
-# Variables para simplificar la lectura del código
 rol = st.session_state.user_role.upper()
 id_tienda = st.session_state.id_tienda
 
