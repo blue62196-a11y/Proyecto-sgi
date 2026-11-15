@@ -46,7 +46,7 @@ if "logged_in" not in st.session_state:
     st.session_state.user_name = ""
     st.session_state.user_role = ""
     st.session_state.id_tienda = None
-    st.session_state.id_usuario = None   
+    st.session_state.id_usuario = None
 
 if not st.session_state.logged_in:
     st.title("🔐 SGI - Iniciar Sesión")
@@ -74,6 +74,7 @@ if not st.session_state.logged_in:
                     st.session_state.user_name = user["Nombre"]
                     st.session_state.user_role = user["Rol"]
                     st.session_state.id_tienda = user["ID_Tienda"]
+                    st.session_state.id_usuario = user["ID_Usuario"]   # NUEVO: lo necesita registrar venta
                     st.rerun()
                 else:
                     st.error("Correo o contraseña incorrectos.")
@@ -86,7 +87,7 @@ st.sidebar.caption(f"Rol: {st.session_state.user_role}")
 menu = st.sidebar.radio(
     "Navegación",
     ["📊 Inventario Actual", "🚨 Puntos de Reorden", "💰 Ventas Totales", "📦 Compras Totales",
- "🧾 Registrar venta"]
+     "🧾 Registrar venta"]
 )
 
 if st.sidebar.button("Cerrar Sesión"):
@@ -142,8 +143,6 @@ elif menu == "💰 Ventas Totales":
 
 elif menu == "📦 Compras Totales":
     st.title("📦 Historial de Compras")
-elif menu == "🧾 Registrar venta":
-    pantalla_registrar_venta(get_connection)
     
     if rol == 'ADMINISTRADOR':
         df_compras = run_query("SELECT * FROM v_compra_total ORDER BY Fecha_Compra DESC;")
@@ -154,3 +153,6 @@ elif menu == "🧾 Registrar venta":
         st.dataframe(df_compras, use_container_width=True)
     else:
         st.info("No hay compras registradas.")
+
+elif menu == "🧾 Registrar venta":
+    pantalla_registrar_venta(get_connection)
