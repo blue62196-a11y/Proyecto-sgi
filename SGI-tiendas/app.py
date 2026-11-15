@@ -84,11 +84,11 @@ if not st.session_state.logged_in:
 st.sidebar.title(f"Bienvenido, {st.session_state.user_name}")
 st.sidebar.caption(f"Rol: {st.session_state.user_role}")
 
-menu = st.sidebar.radio(
-    "Navegación",
-    ["📊 Inventario Actual", "🚨 Puntos de Reorden", "💰 Ventas Totales", "📦 Compras Totales",
-     "🧾 Registrar venta"]
-)
+opciones = ["📊 Inventario Actual", "🚨 Puntos de Reorden", "💰 Ventas Totales", "📦 Compras Totales"]
+if st.session_state.user_role.upper() != 'ADMINISTRADOR':
+    opciones.append("🧾 Registrar venta")
+
+menu = st.sidebar.radio("Navegación", opciones)
 
 if st.sidebar.button("Cerrar Sesión"):
     st.session_state.clear()
