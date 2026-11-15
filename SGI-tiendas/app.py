@@ -142,7 +142,7 @@ elif menu == "💰 Ventas Totales":
 
 elif menu == "📦 Compras Totales":
     st.title("📦 Historial de Compras")
-    elif menu == "🧾 Registrar venta":
+elif menu == "🧾 Registrar venta":
     pantalla_registrar_venta(get_connection)
     
     if rol == 'ADMINISTRADOR':
