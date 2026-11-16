@@ -60,7 +60,7 @@ if not st.session_state.logged_in:
     with st.form("login_form"):
         correo = st.text_input("Correo Electrónico")
         password = st.text_input("Contraseña", type="password")
-        submit = st.form_submit_button("Acceder")
+        submit = st.form_submit_button("Ingresar")
         
         if submit:
             hashed_input = hashlib.sha256(password.encode()).hexdigest()
