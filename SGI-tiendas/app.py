@@ -3,6 +3,7 @@ import mysql.connector
 import pandas as pd
 import hashlib
 from form_venta import pantalla_registrar_venta
+from form_compra import pantalla_registrar_compra
 
 # Configuración inicial de la página
 st.set_page_config(
