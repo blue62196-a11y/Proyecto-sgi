@@ -5,6 +5,7 @@ import hashlib
 from form_venta import pantalla_registrar_venta
 from form_compra import pantalla_registrar_compra
 from form_traslado import pantalla_registrar_traslado
+from form_admin import pantalla_admin
 
 # Configuración inicial de la página
 st.set_page_config(
