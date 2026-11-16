@@ -60,7 +60,6 @@ if not st.session_state.logged_in:
         submit = st.form_submit_button("Ingresar")
         
         if submit:
-            # 1. Encriptamos la contraseña que el usuario escribe en la pantalla
             hashed_input = hashlib.sha256(password.encode()).hexdigest()
 
             conn = get_connection()
@@ -70,7 +69,6 @@ if not st.session_state.logged_in:
                 user = cursor.fetchone()
                 conn.close()
                 
-                # 2. Comparamos de forma segura: Hash contra Hash
                 if user and user["Password_Hash"] == hashed_input:
                     st.session_state.logged_in = True
                     st.session_state.user_name = user["Nombre"]
@@ -86,9 +84,8 @@ if not st.session_state.logged_in:
 st.sidebar.title(f"Bienvenido, {st.session_state.user_name}")
 st.sidebar.caption(f"Rol: {st.session_state.user_role}")
 
-opciones = ["📊 Inventario Actual", "🚨 Puntos de Reorden", "💰 Ventas Totales", "📦 Compras Totales"]
+opciones = ["📊 Dashboard de Inventario", "🚨 Puntos de Reorden", "💰 Análisis de Ventas", "📦 Análisis de Compras"]
 
-# Si NO es administrador, le agregamos los 3 formularios de registro a la vez
 if st.session_state.user_role.upper() != 'ADMINISTRADOR':
     opciones.append("🛒 Registrar compra")
     opciones.append("🧾 Registrar venta")
@@ -100,21 +97,32 @@ if st.sidebar.button("Cerrar Sesión"):
     st.session_state.clear()
     st.rerun()
 
-# --- 4. VISTAS DE LA APLICACIÓN ---
+# --- 4. VISTAS DE LA APLICACIÓN (CON GRÁFICAS) ---
 rol = st.session_state.user_role.upper()
 id_tienda = st.session_state.id_tienda
 
-if menu == "📊 Inventario Actual":
-    st.title("📊 Inventario Actual")
+if menu == "📊 Dashboard de Inventario":
+    st.title("📊 Dashboard de Inventario")
     
     if rol == 'ADMINISTRADOR':
-        st.markdown("Vista global: Existencias de todas las tiendas y el Centro de Distribución.")
+        st.markdown("Vista global: Existencias en toda la red.")
         df_inventario = run_query("SELECT * FROM v_inventario_actual;")
     else:
         st.markdown(f"Vista local: Existencias de la Tienda {id_tienda}.")
         df_inventario = run_query("SELECT * FROM v_inventario_actual WHERE ID_Tienda = %s;", (id_tienda,))
         
     if not df_inventario.empty:
+        # Detectar nombres de columnas automáticamente
+        col_nombre = next((col for col in df_inventario.columns if col.upper() in ['NOMBRE', 'PRODUCTO', 'NOMBRE_PRODUCTO']), None)
+        col_exist = next((col for col in df_inventario.columns if col.upper() in ['EXISTENCIAS', 'CANTIDAD', 'STOCK']), None)
+        
+        if col_nombre and col_exist:
+            st.subheader("🏆 Top 10 Productos con Mayor Stock")
+            # Agrupar y graficar
+            df_chart = df_inventario.groupby(col_nombre)[col_exist].sum().nlargest(10)
+            st.bar_chart(df_chart)
+            
+        st.subheader("📋 Tabla de Existencias")
         st.dataframe(df_inventario, use_container_width=True)
     else:
         st.info("No hay registros de inventario disponibles.")
@@ -123,19 +131,18 @@ elif menu == "🚨 Puntos de Reorden":
     st.title("🚨 Control de Puntos de Reorden")
     
     if rol == 'ADMINISTRADOR':
-        st.markdown("Vista global: Productos que requieren reposición en toda la red.")
         df_reorden = run_query("SELECT * FROM v_punto_reorden;")
     else:
-        st.markdown(f"Vista local: Productos que requieren reposición en la Tienda {id_tienda}.")
         df_reorden = run_query("SELECT * FROM v_punto_reorden WHERE ID_Tienda = %s;", (id_tienda,))
         
     if not df_reorden.empty:
+        st.warning(f"¡Atención! Hay {len(df_reorden)} productos que necesitan reposición.")
         st.dataframe(df_reorden, use_container_width=True)
     else:
-        st.info("No hay datos de punto de reorden.")
+        st.success("Todos los productos están por encima de su punto de reorden. ¡Excelente!")
 
-elif menu == "💰 Ventas Totales":
-    st.title("💰 Historial de Ventas")
+elif menu == "💰 Análisis de Ventas":
+    st.title("💰 Análisis de Ventas")
     
     if rol == 'ADMINISTRADOR':
         df_ventas = run_query("SELECT * FROM v_venta_total ORDER BY Fecha_Venta DESC;")
@@ -143,12 +150,27 @@ elif menu == "💰 Ventas Totales":
         df_ventas = run_query("SELECT * FROM v_venta_total WHERE ID_Tienda = %s ORDER BY Fecha_Venta DESC;", (id_tienda,))
         
     if not df_ventas.empty:
+        # Detectar columnas de fecha y total automáticamente
+        col_fecha = next((col for col in df_ventas.columns if 'FECHA' in col.upper()), None)
+        col_total = next((col for col in df_ventas.columns if col.upper() in ['TOTAL', 'MONTO', 'TOTAL_VENTA']), None)
+        
+        if col_fecha and col_total:
+            st.subheader("📈 Tendencia de Ingresos en el Tiempo")
+            # Convertir a datetime y agrupar por fecha para la gráfica de líneas
+            df_ventas[col_fecha] = pd.to_datetime(df_ventas[col_fecha])
+            tendencia = df_ventas.groupby(col_fecha)[col_total].sum()
+            st.line_chart(tendencia)
+            
+            # Tarjeta de métrica rápida
+            st.metric("Total Acumulado (Registros mostrados)", f"${tendencia.sum():,.2f}")
+
+        st.subheader("📋 Historial de Registros")
         st.dataframe(df_ventas, use_container_width=True)
     else:
         st.info("No hay ventas registradas.")
 
-elif menu == "📦 Compras Totales":
-    st.title("📦 Historial de Compras")
+elif menu == "📦 Análisis de Compras":
+    st.title("📦 Análisis de Compras")
     
     if rol == 'ADMINISTRADOR':
         df_compras = run_query("SELECT * FROM v_compra_total ORDER BY Fecha_Compra DESC;")
@@ -156,6 +178,16 @@ elif menu == "📦 Compras Totales":
         df_compras = run_query("SELECT * FROM v_compra_total WHERE ID_Tienda = %s ORDER BY Fecha_Compra DESC;", (id_tienda,))
         
     if not df_compras.empty:
+        col_fecha = next((col for col in df_compras.columns if 'FECHA' in col.upper()), None)
+        col_total = next((col for col in df_compras.columns if col.upper() in ['TOTAL', 'MONTO', 'TOTAL_COMPRA']), None)
+        
+        if col_fecha and col_total:
+            st.subheader("📉 Inversión en Compras en el Tiempo")
+            df_compras[col_fecha] = pd.to_datetime(df_compras[col_fecha])
+            tendencia = df_compras.groupby(col_fecha)[col_total].sum()
+            st.bar_chart(tendencia)  # Usamos barras para compras para diferenciar de las ventas
+
+        st.subheader("📋 Historial de Registros")
         st.dataframe(df_compras, use_container_width=True)
     else:
         st.info("No hay compras registradas.")
