@@ -17,15 +17,22 @@ st.set_page_config(
 )
 
 # --- 1. CONFIGURACIÓN DE CONEXIÓN A LA BASE DE DATOS ---
+def _get_secret(key, default):
+    """Obtiene un secreto de Streamlit o devuelve el valor por defecto si no existe secrets.toml."""
+    try:
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
 def get_connection():
     """Establece la conexión con la base de datos MySQL."""
     try:
         return mysql.connector.connect(
-            host=st.secrets.get("DB_HOST", "localhost"),
-            user=st.secrets.get("DB_USER", "root"),
-            password=st.secrets.get("DB_PASSWORD", ""),
-            database=st.secrets.get("DB_NAME", "sgi_tiendas"),
-            port=int(st.secrets.get("DB_PORT", 3306))
+            host=_get_secret("DB_HOST", "localhost"),
+            user=_get_secret("DB_USER", "root"),
+            password=_get_secret("DB_PASSWORD", ""),
+            database=_get_secret("DB_NAME", "sgi_tiendas"),
+            port=int(_get_secret("DB_PORT", 3306))
         )
     except Exception as e:
         st.error(f"Error al conectar con la base de datos: {e}")
@@ -87,7 +94,14 @@ if not st.session_state.logged_in:
 st.sidebar.title(f"Bienvenido, {st.session_state.user_name}")
 st.sidebar.caption(f"Rol: {st.session_state.user_role}")
 
-opciones = ["📊 Dashboard de Inventario", "🚨 Puntos de Reorden", "💰 Análisis de Ventas", "📦 Análisis de Compras"]
+opciones = [
+    "📊 Dashboard de Inventario",
+    "🚨 Puntos de Reorden",
+    "⏳ Próximos a Vencer",
+    "⚖️ Comparativa Costo CD",
+    "💰 Análisis de Ventas",
+    "📦 Análisis de Compras",
+]
 
 # Distribuimos los accesos según el rol
 if st.session_state.user_role.upper() != 'ADMINISTRADOR':
@@ -140,10 +154,65 @@ elif menu == "🚨 Puntos de Reorden":
         df_reorden = run_query("SELECT * FROM v_punto_reorden WHERE ID_Tienda = %s;", (id_tienda,))
         
     if not df_reorden.empty:
-        st.warning(f"¡Atención! Hay {len(df_reorden)} productos que necesitan reposición.")
+        df_reorden["Cantidad_A_Comprar"] = (
+            df_reorden["Punto_Reorden"] - df_reorden["Existencias"]
+        ).clip(lower=0).round(2)
+
+        necesitan_compra = df_reorden[df_reorden["Estado"] == "COMPRAR"]
+        if not necesitan_compra.empty:
+            st.warning(f"¡Atención! Hay {len(necesitan_compra)} productos que necesitan reposición.")
+        else:
+            st.success("Todos los productos están por encima de su punto de reorden. ¡Excelente!")
+
         st.dataframe(df_reorden, use_container_width=True)
     else:
-        st.success("Todos los productos están por encima de su punto de reorden. ¡Excelente!")
+        st.info("No hay productos configurados con punto de reorden.")
+
+elif menu == "⏳ Próximos a Vencer":
+    st.title("⏳ Productos Próximos a Vencer")
+    dias_limite = st.slider("Mostrar lotes que vencen dentro de los próximos (días):", min_value=7, max_value=365, value=90)
+
+    if rol == 'ADMINISTRADOR':
+        df_vencer = run_query("SELECT * FROM v_proximos_vencer ORDER BY Dias_Restantes ASC;")
+    else:
+        df_vencer = run_query("SELECT * FROM v_proximos_vencer WHERE ID_Tienda = %s ORDER BY Dias_Restantes ASC;", (id_tienda,))
+
+    if not df_vencer.empty:
+        df_filtrado = df_vencer[df_vencer["Dias_Restantes"] <= dias_limite]
+        vencidos = df_filtrado[df_filtrado["Dias_Restantes"] <= 0]
+        por_vencer = df_filtrado[(df_filtrado["Dias_Restantes"] > 0) & (df_filtrado["Dias_Restantes"] <= 30)]
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Lotes en el rango", len(df_filtrado))
+        c2.metric("Vencen en ≤ 30 días", len(por_vencer))
+        c3.metric("Ya vencidos", len(vencidos))
+
+        if not df_filtrado.empty:
+            st.dataframe(df_filtrado, use_container_width=True)
+        else:
+            st.success(f"No hay lotes con vencimiento dentro de los próximos {dias_limite} días.")
+    else:
+        st.info("No hay productos con fecha de vencimiento registrada.")
+
+elif menu == "⚖️ Comparativa Costo CD":
+    st.title("⚖️ Comparativa de Costos: CD vs Otros Proveedores")
+
+    if rol == 'ADMINISTRADOR':
+        df_costo = run_query("SELECT * FROM v_costo_cd;")
+    else:
+        df_costo = run_query("SELECT * FROM v_costo_cd WHERE ID_Tienda = %s;", (id_tienda,))
+
+    if not df_costo.empty:
+        conviene_cd = len(df_costo[df_costo["Decision"] == "CD conviene"])
+        no_conviene_cd = len(df_costo[df_costo["Decision"] == "CD no conviene"])
+
+        c1, c2 = st.columns(2)
+        c1.metric("Conviene comprar al CD", conviene_cd)
+        c2.metric("Conviene otro proveedor", no_conviene_cd)
+
+        st.dataframe(df_costo, use_container_width=True)
+    else:
+        st.info("No hay datos de costos comparativos disponibles.")
 
 elif menu == "💰 Análisis de Ventas":
     st.title("💰 Análisis de Ventas")
