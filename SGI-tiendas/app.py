@@ -4,6 +4,7 @@ import pandas as pd
 import hashlib
 from form_venta import pantalla_registrar_venta
 from form_compra import pantalla_registrar_compra
+from form_traslado import pantalla_registrar_traslado
 
 # Configuración inicial de la página
 st.set_page_config(
@@ -99,6 +100,11 @@ if st.sidebar.button("Cerrar Sesión"):
     st.rerun()
 
 # --- 4. VISTAS DE LA APLICACIÓN ---
+# Si NO es administrador, le agregamos los formularios de registro
+if st.session_state.user_role.upper() != 'ADMINISTRADOR':
+    opciones.append("🛒 Registrar compra")
+    opciones.append("🧾 Registrar venta")
+    opciones.append("🚚 Registrar traslado") # <--- NUEVA
 rol = st.session_state.user_role.upper()
 id_tienda = st.session_state.id_tienda
 
@@ -163,3 +169,6 @@ elif menu == "🛒 Registrar compra":
 
 elif menu == "🧾 Registrar venta":
     pantalla_registrar_venta(get_connection)
+    
+elif menu == "🚚 Registrar traslado": 
+    pantalla_registrar_traslado(get_connection)
