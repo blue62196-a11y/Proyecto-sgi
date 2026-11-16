@@ -97,7 +97,7 @@ if st.sidebar.button("Cerrar Sesión"):
     st.session_state.clear()
     st.rerun()
 
-# --- 4. VISTAS DE LA APLICACIÓN (CON GRÁFICAS) ---
+# --- 4. VISTAS DE LA APLICACIÓN (CON GRÁFICAS CORREGIDAS) ---
 rol = st.session_state.user_role.upper()
 id_tienda = st.session_state.id_tienda
 
@@ -112,15 +112,15 @@ if menu == "📊 Dashboard de Inventario":
         df_inventario = run_query("SELECT * FROM v_inventario_actual WHERE ID_Tienda = %s;", (id_tienda,))
         
     if not df_inventario.empty:
-        # Detectar nombres de columnas automáticamente
         col_nombre = next((col for col in df_inventario.columns if col.upper() in ['NOMBRE', 'PRODUCTO', 'NOMBRE_PRODUCTO']), None)
         col_exist = next((col for col in df_inventario.columns if col.upper() in ['EXISTENCIAS', 'CANTIDAD', 'STOCK']), None)
         
         if col_nombre and col_exist:
             st.subheader("🏆 Top 10 Productos con Mayor Stock")
-            # Agrupar y graficar
-            df_chart = df_inventario.groupby(col_nombre)[col_exist].sum().nlargest(10)
-            st.bar_chart(df_chart)
+            
+            # CORRECCIÓN: Reseteamos el índice y mapeamos X y Y explícitamente
+            df_chart = df_inventario.groupby(col_nombre)[col_exist].sum().nlargest(10).reset_index()
+            st.bar_chart(df_chart, x=col_nombre, y=col_exist)
             
         st.subheader("📋 Tabla de Existencias")
         st.dataframe(df_inventario, use_container_width=True)
@@ -150,19 +150,18 @@ elif menu == "💰 Análisis de Ventas":
         df_ventas = run_query("SELECT * FROM v_venta_total WHERE ID_Tienda = %s ORDER BY Fecha_Venta DESC;", (id_tienda,))
         
     if not df_ventas.empty:
-        # Detectar columnas de fecha y total automáticamente
         col_fecha = next((col for col in df_ventas.columns if 'FECHA' in col.upper()), None)
         col_total = next((col for col in df_ventas.columns if col.upper() in ['TOTAL', 'MONTO', 'TOTAL_VENTA']), None)
         
         if col_fecha and col_total:
             st.subheader("📈 Tendencia de Ingresos en el Tiempo")
-            # Convertir a datetime y agrupar por fecha para la gráfica de líneas
             df_ventas[col_fecha] = pd.to_datetime(df_ventas[col_fecha])
-            tendencia = df_ventas.groupby(col_fecha)[col_total].sum()
-            st.line_chart(tendencia)
             
-            # Tarjeta de métrica rápida
-            st.metric("Total Acumulado (Registros mostrados)", f"${tendencia.sum():,.2f}")
+            # CORRECCIÓN: Reseteamos el índice y mapeamos X y Y
+            tendencia = df_ventas.groupby(col_fecha)[col_total].sum().reset_index()
+            st.line_chart(tendencia, x=col_fecha, y=col_total)
+            
+            st.metric("Total Acumulado (Registros mostrados)", f"${tendencia[col_total].sum():,.2f}")
 
         st.subheader("📋 Historial de Registros")
         st.dataframe(df_ventas, use_container_width=True)
@@ -184,8 +183,10 @@ elif menu == "📦 Análisis de Compras":
         if col_fecha and col_total:
             st.subheader("📉 Inversión en Compras en el Tiempo")
             df_compras[col_fecha] = pd.to_datetime(df_compras[col_fecha])
-            tendencia = df_compras.groupby(col_fecha)[col_total].sum()
-            st.bar_chart(tendencia)  # Usamos barras para compras para diferenciar de las ventas
+            
+            # CORRECCIÓN: Reseteamos el índice y mapeamos X y Y
+            tendencia = df_compras.groupby(col_fecha)[col_total].sum().reset_index()
+            st.bar_chart(tendencia, x=col_fecha, y=col_total)
 
         st.subheader("📋 Historial de Registros")
         st.dataframe(df_compras, use_container_width=True)
