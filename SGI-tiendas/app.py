@@ -97,7 +97,7 @@ if st.sidebar.button("Cerrar Sesión"):
     st.session_state.clear()
     st.rerun()
 
-# --- 4. VISTAS DE LA APLICACIÓN (CON GRÁFICAS CORREGIDAS) ---
+# --- 4. VISTAS DE LA APLICACIÓN ---
 rol = st.session_state.user_role.upper()
 id_tienda = st.session_state.id_tienda
 
@@ -118,9 +118,10 @@ if menu == "📊 Dashboard de Inventario":
         if col_nombre and col_exist:
             st.subheader("🏆 Top 10 Productos con Mayor Stock")
             
-            # CORRECCIÓN: Reseteamos el índice y mapeamos X y Y explícitamente
             df_chart = df_inventario.groupby(col_nombre)[col_exist].sum().nlargest(10).reset_index()
-            st.bar_chart(df_chart, x=col_nombre, y=col_exist)
+            
+            # CORRECCIÓN: Agregamos el parámetro color=col_nombre para que Streamlit asigne colores distintos
+            st.bar_chart(df_chart, x=col_nombre, y=col_exist, color=col_nombre)
             
         st.subheader("📋 Tabla de Existencias")
         st.dataframe(df_inventario, use_container_width=True)
@@ -157,7 +158,6 @@ elif menu == "💰 Análisis de Ventas":
             st.subheader("📈 Tendencia de Ingresos en el Tiempo")
             df_ventas[col_fecha] = pd.to_datetime(df_ventas[col_fecha])
             
-            # CORRECCIÓN: Reseteamos el índice y mapeamos X y Y
             tendencia = df_ventas.groupby(col_fecha)[col_total].sum().reset_index()
             st.line_chart(tendencia, x=col_fecha, y=col_total)
             
@@ -184,7 +184,6 @@ elif menu == "📦 Análisis de Compras":
             st.subheader("📉 Inversión en Compras en el Tiempo")
             df_compras[col_fecha] = pd.to_datetime(df_compras[col_fecha])
             
-            # CORRECCIÓN: Reseteamos el índice y mapeamos X y Y
             tendencia = df_compras.groupby(col_fecha)[col_total].sum().reset_index()
             st.bar_chart(tendencia, x=col_fecha, y=col_total)
 
