@@ -75,7 +75,7 @@ if not st.session_state.logged_in:
                     st.session_state.user_name = user["Nombre"]
                     st.session_state.user_role = user["Rol"]
                     st.session_state.id_tienda = user["ID_Tienda"]
-                    st.session_state.id_usuario = user["ID_Usuario"]   # NUEVO: lo necesita registrar venta
+                    st.session_state.id_usuario = user["ID_Usuario"]   # Necesario para compras y ventas
                     st.rerun()
                 else:
                     st.error("Correo o contraseña incorrectos.")
@@ -86,7 +86,10 @@ st.sidebar.title(f"Bienvenido, {st.session_state.user_name}")
 st.sidebar.caption(f"Rol: {st.session_state.user_role}")
 
 opciones = ["📊 Inventario Actual", "🚨 Puntos de Reorden", "💰 Ventas Totales", "📦 Compras Totales"]
+
+# Si NO es administrador, le agregamos los formularios de registro
 if st.session_state.user_role.upper() != 'ADMINISTRADOR':
+    opciones.append("🛒 Registrar compra")
     opciones.append("🧾 Registrar venta")
 
 menu = st.sidebar.radio("Navegación", opciones)
@@ -154,6 +157,9 @@ elif menu == "📦 Compras Totales":
         st.dataframe(df_compras, use_container_width=True)
     else:
         st.info("No hay compras registradas.")
+
+elif menu == "🛒 Registrar compra":
+    pantalla_registrar_compra(get_connection)
 
 elif menu == "🧾 Registrar venta":
     pantalla_registrar_venta(get_connection)
