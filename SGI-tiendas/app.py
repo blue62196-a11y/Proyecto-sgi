@@ -76,7 +76,7 @@ if not st.session_state.logged_in:
                     st.session_state.user_name = user["Nombre"]
                     st.session_state.user_role = user["Rol"]
                     st.session_state.id_tienda = user["ID_Tienda"]
-                    st.session_state.id_usuario = user["ID_Usuario"]   # Necesario para compras y ventas
+                    st.session_state.id_usuario = user["ID_Usuario"]
                     st.rerun()
                 else:
                     st.error("Correo o contraseña incorrectos.")
@@ -88,10 +88,11 @@ st.sidebar.caption(f"Rol: {st.session_state.user_role}")
 
 opciones = ["📊 Inventario Actual", "🚨 Puntos de Reorden", "💰 Ventas Totales", "📦 Compras Totales"]
 
-# Si NO es administrador, le agregamos los formularios de registro
+# Si NO es administrador, le agregamos los 3 formularios de registro a la vez
 if st.session_state.user_role.upper() != 'ADMINISTRADOR':
     opciones.append("🛒 Registrar compra")
     opciones.append("🧾 Registrar venta")
+    opciones.append("🚚 Registrar traslado")
 
 menu = st.sidebar.radio("Navegación", opciones)
 
@@ -100,11 +101,6 @@ if st.sidebar.button("Cerrar Sesión"):
     st.rerun()
 
 # --- 4. VISTAS DE LA APLICACIÓN ---
-# Si NO es administrador, le agregamos los formularios de registro
-if st.session_state.user_role.upper() != 'ADMINISTRADOR':
-    opciones.append("🛒 Registrar compra")
-    opciones.append("🧾 Registrar venta")
-    opciones.append("🚚 Registrar traslado") # <--- NUEVA
 rol = st.session_state.user_role.upper()
 id_tienda = st.session_state.id_tienda
 
