@@ -97,7 +97,7 @@ def pantalla_registrar_traslado(get_connection):
         st.session_state.carrito_traslado = []
 
     # 1. Seleccionar la tienda destino
-    tiendas = _consultar(get_connection, "SELECT ID_Tienda, Nombre FROM tienda WHERE ID_Tienda != %s AND Estado_Tienda = 'ACTIVO'", (id_tienda,))
+    tiendas = _consultar(get_connection, "SELECT ID_Tienda, Nombre FROM tienda WHERE ID_Tienda != %s", (id_tienda,))
     if not tiendas:
         st.info("No hay otras tiendas registradas para realizar traslados.")
         return
