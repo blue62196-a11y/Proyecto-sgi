@@ -260,7 +260,7 @@ def pantalla_registrar_compra(get_connection):
 
     b1, b2, b3 = st.columns([1.5, 2, 2.5])
     vence = b1.checkbox("Tiene vencimiento")
-    fecha_venc = b2.date_input("Fecha de vencimiento", value=date.today(), disabled=not vence)
+    fecha_venc = b2.date_input("Fecha de vencimiento", value=date.today(), min_value=date.today(), disabled=not vence)
     sugerido = b3.number_input("Precio de venta sugerido (0 = no definir)", min_value=0.0, value=0.0, step=0.25)
 
     if st.button("➕ Agregar a la compra"):
