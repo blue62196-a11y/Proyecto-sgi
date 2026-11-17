@@ -2,7 +2,6 @@ import streamlit as st
 import mysql.connector
 import pandas as pd
 import hashlib
-
 # Importamos todos los módulos de registro y administración
 from form_venta import pantalla_registrar_venta
 from form_compra import pantalla_registrar_compra
@@ -17,22 +16,15 @@ st.set_page_config(
 )
 
 # --- 1. CONFIGURACIÓN DE CONEXIÓN A LA BASE DE DATOS ---
-def _get_secret(key, default):
-    """Obtiene un secreto de Streamlit o devuelve el valor por defecto si no existe secrets.toml."""
-    try:
-        return st.secrets.get(key, default)
-    except Exception:
-        return default
-
 def get_connection():
     """Establece la conexión con la base de datos MySQL."""
     try:
         return mysql.connector.connect(
-            host=_get_secret("DB_HOST", "localhost"),
-            user=_get_secret("DB_USER", "root"),
-            password=_get_secret("DB_PASSWORD", ""),
-            database=_get_secret("DB_NAME", "sgi_tiendas"),
-            port=int(_get_secret("DB_PORT", 3306))
+            host=st.secrets.get("DB_HOST", "localhost"),
+            user=st.secrets.get("DB_USER", "root"),
+            password=st.secrets.get("DB_PASSWORD", ""),
+            database=st.secrets.get("DB_NAME", "sgi_tiendas"),
+            port=int(st.secrets.get("DB_PORT", 3306))
         )
     except Exception as e:
         st.error(f"Error al conectar con la base de datos: {e}")
@@ -51,6 +43,16 @@ def run_query(query, params=None):
             conn.close()
             return pd.DataFrame()
     return pd.DataFrame()
+
+def boton_exportar(df, nombre_archivo):
+    """Genera un botón estandarizado para descargar DataFrames en CSV."""
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Descargar en Excel / CSV",
+        data=csv,
+        file_name=f"{nombre_archivo}.csv",
+        mime='text/csv'
+    )
 
 # --- 2. CONTROL DE SESIÓN / LOGIN ---
 if "logged_in" not in st.session_state:
@@ -94,14 +96,7 @@ if not st.session_state.logged_in:
 st.sidebar.title(f"Bienvenido, {st.session_state.user_name}")
 st.sidebar.caption(f"Rol: {st.session_state.user_role}")
 
-opciones = [
-    "📊 Dashboard de Inventario",
-    "🚨 Puntos de Reorden",
-    "⏳ Próximos a Vencer",
-    "⚖️ Comparativa Costo CD",
-    "💰 Análisis de Ventas",
-    "📦 Análisis de Compras",
-]
+opciones = ["📊 Dashboard de Inventario", "🚨 Puntos de Reorden", "💰 Análisis de Ventas", "📦 Análisis de Compras"]
 
 # Distribuimos los accesos según el rol
 if st.session_state.user_role.upper() != 'ADMINISTRADOR':
@@ -142,6 +137,7 @@ if menu == "📊 Dashboard de Inventario":
             
         st.subheader("📋 Tabla de Existencias")
         st.dataframe(df_inventario, use_container_width=True)
+        boton_exportar(df_inventario, "Inventario_Actual")
     else:
         st.info("No hay registros de inventario disponibles.")
 
@@ -154,65 +150,11 @@ elif menu == "🚨 Puntos de Reorden":
         df_reorden = run_query("SELECT * FROM v_punto_reorden WHERE ID_Tienda = %s;", (id_tienda,))
         
     if not df_reorden.empty:
-        df_reorden["Cantidad_A_Comprar"] = (
-            df_reorden["Punto_Reorden"] - df_reorden["Existencias"]
-        ).clip(lower=0).round(2)
-
-        necesitan_compra = df_reorden[df_reorden["Estado"] == "COMPRAR"]
-        if not necesitan_compra.empty:
-            st.warning(f"¡Atención! Hay {len(necesitan_compra)} productos que necesitan reposición.")
-        else:
-            st.success("Todos los productos están por encima de su punto de reorden. ¡Excelente!")
-
+        st.warning(f"¡Atención! Hay {len(df_reorden)} productos que necesitan reposición.")
         st.dataframe(df_reorden, use_container_width=True)
+        boton_exportar(df_reorden, "Puntos_Reorden")
     else:
-        st.info("No hay productos configurados con punto de reorden.")
-
-elif menu == "⏳ Próximos a Vencer":
-    st.title("⏳ Productos Próximos a Vencer")
-    dias_limite = st.slider("Mostrar lotes que vencen dentro de los próximos (días):", min_value=7, max_value=365, value=90)
-
-    if rol == 'ADMINISTRADOR':
-        df_vencer = run_query("SELECT * FROM v_proximos_vencer ORDER BY Dias_Restantes ASC;")
-    else:
-        df_vencer = run_query("SELECT * FROM v_proximos_vencer WHERE ID_Tienda = %s ORDER BY Dias_Restantes ASC;", (id_tienda,))
-
-    if not df_vencer.empty:
-        df_filtrado = df_vencer[df_vencer["Dias_Restantes"] <= dias_limite]
-        vencidos = df_filtrado[df_filtrado["Dias_Restantes"] <= 0]
-        por_vencer = df_filtrado[(df_filtrado["Dias_Restantes"] > 0) & (df_filtrado["Dias_Restantes"] <= 30)]
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Lotes en el rango", len(df_filtrado))
-        c2.metric("Vencen en ≤ 30 días", len(por_vencer))
-        c3.metric("Ya vencidos", len(vencidos))
-
-        if not df_filtrado.empty:
-            st.dataframe(df_filtrado, use_container_width=True)
-        else:
-            st.success(f"No hay lotes con vencimiento dentro de los próximos {dias_limite} días.")
-    else:
-        st.info("No hay productos con fecha de vencimiento registrada.")
-
-elif menu == "⚖️ Comparativa Costo CD":
-    st.title("⚖️ Comparativa de Costos: CD vs Otros Proveedores")
-
-    if rol == 'ADMINISTRADOR':
-        df_costo = run_query("SELECT * FROM v_costo_cd;")
-    else:
-        df_costo = run_query("SELECT * FROM v_costo_cd WHERE ID_Tienda = %s;", (id_tienda,))
-
-    if not df_costo.empty:
-        conviene_cd = len(df_costo[df_costo["Decision"] == "CD conviene"])
-        no_conviene_cd = len(df_costo[df_costo["Decision"] == "CD no conviene"])
-
-        c1, c2 = st.columns(2)
-        c1.metric("Conviene comprar al CD", conviene_cd)
-        c2.metric("Conviene otro proveedor", no_conviene_cd)
-
-        st.dataframe(df_costo, use_container_width=True)
-    else:
-        st.info("No hay datos de costos comparativos disponibles.")
+        st.success("Todos los productos están por encima de su punto de reorden. ¡Excelente!")
 
 elif menu == "💰 Análisis de Ventas":
     st.title("💰 Análisis de Ventas")
@@ -226,15 +168,28 @@ elif menu == "💰 Análisis de Ventas":
         col_fecha = next((col for col in df_ventas.columns if 'FECHA' in col.upper()), None)
         col_total = next((col for col in df_ventas.columns if col.upper() in ['TOTAL', 'MONTO', 'TOTAL_VENTA']), None)
         
-        if col_fecha and col_total:
-            st.subheader("📈 Tendencia de Ingresos en el Tiempo")
+        if col_fecha:
             df_ventas[col_fecha] = pd.to_datetime(df_ventas[col_fecha])
-            tendencia = df_ventas.groupby(col_fecha)[col_total].sum().reset_index()
-            st.line_chart(tendencia, x=col_fecha, y=col_total)
-            st.metric("Total Acumulado (Registros mostrados)", f"${tendencia[col_total].sum():,.2f}")
+            
+            # Buscador por fechas
+            fechas = st.date_input("Filtrar por Rango de Fechas", value=[])
+            if len(fechas) == 2:
+                inicio, fin = fechas
+                mask = (df_ventas[col_fecha].dt.date >= inicio) & (df_ventas[col_fecha].dt.date <= fin)
+                df_ventas = df_ventas.loc[mask]
+        
+        if df_ventas.empty:
+            st.warning("No hay ventas registradas en este rango de fechas.")
+        else:
+            if col_fecha and col_total:
+                st.subheader("📈 Tendencia de Ingresos en el Tiempo")
+                tendencia = df_ventas.groupby(col_fecha)[col_total].sum().reset_index()
+                st.line_chart(tendencia, x=col_fecha, y=col_total)
+                st.metric("Total Acumulado (Según Filtro)", f"${tendencia[col_total].sum():,.2f}")
 
-        st.subheader("📋 Historial de Registros")
-        st.dataframe(df_ventas, use_container_width=True)
+            st.subheader("📋 Historial de Registros")
+            st.dataframe(df_ventas, use_container_width=True)
+            boton_exportar(df_ventas, "Reporte_Ventas")
     else:
         st.info("No hay ventas registradas.")
 
@@ -250,14 +205,27 @@ elif menu == "📦 Análisis de Compras":
         col_fecha = next((col for col in df_compras.columns if 'FECHA' in col.upper()), None)
         col_total = next((col for col in df_compras.columns if col.upper() in ['TOTAL', 'MONTO', 'TOTAL_COMPRA']), None)
         
-        if col_fecha and col_total:
-            st.subheader("📉 Inversión en Compras en el Tiempo")
+        if col_fecha:
             df_compras[col_fecha] = pd.to_datetime(df_compras[col_fecha])
-            tendencia = df_compras.groupby(col_fecha)[col_total].sum().reset_index()
-            st.bar_chart(tendencia, x=col_fecha, y=col_total)
+            
+            # Buscador por fechas
+            fechas = st.date_input("Filtrar por Rango de Fechas", value=[])
+            if len(fechas) == 2:
+                inicio, fin = fechas
+                mask = (df_compras[col_fecha].dt.date >= inicio) & (df_compras[col_fecha].dt.date <= fin)
+                df_compras = df_compras.loc[mask]
+        
+        if df_compras.empty:
+            st.warning("No hay compras registradas en este rango de fechas.")
+        else:
+            if col_fecha and col_total:
+                st.subheader("📉 Inversión en Compras en el Tiempo")
+                tendencia = df_compras.groupby(col_fecha)[col_total].sum().reset_index()
+                st.bar_chart(tendencia, x=col_fecha, y=col_total)
 
-        st.subheader("📋 Historial de Registros")
-        st.dataframe(df_compras, use_container_width=True)
+            st.subheader("📋 Historial de Registros")
+            st.dataframe(df_compras, use_container_width=True)
+            boton_exportar(df_compras, "Reporte_Compras")
     else:
         st.info("No hay compras registradas.")
 
