@@ -175,4 +175,86 @@ elif menu == "💰 Análisis de Ventas":
         if col_fecha:
             df_ventas[col_fecha] = pd.to_datetime(df_ventas[col_fecha])
             
-            st.markdown("###
+            st.markdown("### 📅 Filtrar Datos")
+            # SOLUCIÓN: Agrupamos los calendarios en un Formulario para evitar recargas automáticas
+            with st.form("form_filtro_ventas"):
+                c1, c2 = st.columns(2)
+                inicio = c1.date_input("Fecha de Inicio", value=hace_un_mes)
+                fin = c2.date_input("Fecha de Fin", value=hoy)
+                btn_filtrar = st.form_submit_button("Aplicar Filtro")
+            
+            if inicio > fin:
+                st.error("La fecha de inicio no puede ser mayor a la fecha de fin.")
+            else:
+                mask = (df_ventas[col_fecha].dt.date >= inicio) & (df_ventas[col_fecha].dt.date <= fin)
+                df_ventas = df_ventas.loc[mask]
+        
+        if df_ventas.empty:
+            st.warning("No hay ventas registradas en este rango de fechas.")
+        else:
+            if col_fecha and col_total:
+                st.subheader("📈 Tendencia de Ingresos")
+                tendencia = df_ventas.groupby(col_fecha)[col_total].sum().reset_index()
+                st.line_chart(tendencia, x=col_fecha, y=col_total)
+                st.metric("Total Acumulado (Según Filtro)", f"${tendencia[col_total].sum():,.2f}")
+
+            st.subheader("📋 Historial de Registros")
+            st.dataframe(df_ventas, use_container_width=True)
+            boton_exportar(df_ventas, "Reporte_Ventas")
+    else:
+        st.info("No hay ventas registradas.")
+
+elif menu == "📦 Análisis de Compras":
+    st.title("📦 Análisis de Compras")
+    
+    if rol == 'ADMINISTRADOR':
+        df_compras = run_query("SELECT * FROM v_compra_total ORDER BY Fecha_Compra DESC;")
+    else:
+        df_compras = run_query("SELECT * FROM v_compra_total WHERE ID_Tienda = %s ORDER BY Fecha_Compra DESC;", (id_tienda,))
+        
+    if not df_compras.empty:
+        col_fecha = next((col for col in df_compras.columns if 'FECHA' in col.upper()), None)
+        col_total = next((col for col in df_compras.columns if col.upper() in ['TOTAL', 'MONTO', 'TOTAL_COMPRA']), None)
+        
+        if col_fecha:
+            df_compras[col_fecha] = pd.to_datetime(df_compras[col_fecha])
+            
+            st.markdown("### 📅 Filtrar Datos")
+            # SOLUCIÓN: Agrupamos los calendarios en un Formulario
+            with st.form("form_filtro_compras"):
+                c1, c2 = st.columns(2)
+                inicio = c1.date_input("Fecha de Inicio", value=hace_un_mes)
+                fin = c2.date_input("Fecha de Fin", value=hoy)
+                btn_filtrar = st.form_submit_button("Aplicar Filtro")
+            
+            if inicio > fin:
+                st.error("La fecha de inicio no puede ser mayor a la fecha de fin.")
+            else:
+                mask = (df_compras[col_fecha].dt.date >= inicio) & (df_compras[col_fecha].dt.date <= fin)
+                df_compras = df_compras.loc[mask]
+        
+        if df_compras.empty:
+            st.warning("No hay compras registradas en este rango de fechas.")
+        else:
+            if col_fecha and col_total:
+                st.subheader("📉 Inversión en Compras")
+                tendencia = df_compras.groupby(col_fecha)[col_total].sum().reset_index()
+                st.bar_chart(tendencia, x=col_fecha, y=col_total)
+
+            st.subheader("📋 Historial de Registros")
+            st.dataframe(df_compras, use_container_width=True)
+            boton_exportar(df_compras, "Reporte_Compras")
+    else:
+        st.info("No hay compras registradas.")
+
+elif menu == "🛒 Registrar compra":
+    pantalla_registrar_compra(get_connection)
+
+elif menu == "🧾 Registrar venta":
+    pantalla_registrar_venta(get_connection)
+    
+elif menu == "🚚 Registrar traslado": 
+    pantalla_registrar_traslado(get_connection)
+
+elif menu == "⚙️ Panel de Administración":
+    pantalla_admin(get_connection)
