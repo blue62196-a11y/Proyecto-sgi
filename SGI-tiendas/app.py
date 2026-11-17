@@ -2,7 +2,7 @@ import streamlit as st
 import mysql.connector
 import pandas as pd
 import hashlib
-import datetime  # <--- Agregamos esta librería nativa de Python
+import datetime
 
 # Importamos todos los módulos de registro y administración
 from form_venta import pantalla_registrar_venta
@@ -100,7 +100,6 @@ st.sidebar.caption(f"Rol: {st.session_state.user_role}")
 
 opciones = ["📊 Dashboard de Inventario", "🚨 Puntos de Reorden", "💰 Análisis de Ventas", "📦 Análisis de Compras"]
 
-# Distribuimos los accesos según el rol
 if st.session_state.user_role.upper() != 'ADMINISTRADOR':
     opciones.append("🛒 Registrar compra")
     opciones.append("🧾 Registrar venta")
@@ -118,7 +117,6 @@ if st.sidebar.button("Cerrar Sesión"):
 rol = st.session_state.user_role.upper()
 id_tienda = st.session_state.id_tienda
 
-# Calculamos los últimos 30 días para que el calendario no empiece vacío
 hoy = datetime.date.today()
 hace_un_mes = hoy - datetime.timedelta(days=30)
 
@@ -177,10 +175,15 @@ elif menu == "💰 Análisis de Ventas":
         if col_fecha:
             df_ventas[col_fecha] = pd.to_datetime(df_ventas[col_fecha])
             
-            # Buscador por fechas con rango automático
-            fechas = st.date_input("Filtrar por Rango de Fechas", value=(hace_un_mes, hoy))
-            if len(fechas) == 2:
-                inicio, fin = fechas
+            st.markdown("### 📅 Filtrar Datos")
+            # SOLUCIÓN: Dos calendarios independientes en columnas
+            c1, c2 = st.columns(2)
+            inicio = c1.date_input("Fecha de Inicio", value=hace_un_mes, key="v_inicio")
+            fin = c2.date_input("Fecha de Fin", value=hoy, key="v_fin")
+            
+            if inicio > fin:
+                st.error("La fecha de inicio no puede ser mayor a la fecha de fin.")
+            else:
                 mask = (df_ventas[col_fecha].dt.date >= inicio) & (df_ventas[col_fecha].dt.date <= fin)
                 df_ventas = df_ventas.loc[mask]
         
@@ -214,10 +217,15 @@ elif menu == "📦 Análisis de Compras":
         if col_fecha:
             df_compras[col_fecha] = pd.to_datetime(df_compras[col_fecha])
             
-            # Buscador por fechas con rango automático
-            fechas = st.date_input("Filtrar por Rango de Fechas", value=(hace_un_mes, hoy))
-            if len(fechas) == 2:
-                inicio, fin = fechas
+            st.markdown("### 📅 Filtrar Datos")
+            # SOLUCIÓN: Dos calendarios independientes en columnas
+            c1, c2 = st.columns(2)
+            inicio = c1.date_input("Fecha de Inicio", value=hace_un_mes, key="c_inicio")
+            fin = c2.date_input("Fecha de Fin", value=hoy, key="c_fin")
+            
+            if inicio > fin:
+                st.error("La fecha de inicio no puede ser mayor a la fecha de fin.")
+            else:
                 mask = (df_compras[col_fecha].dt.date >= inicio) & (df_compras[col_fecha].dt.date <= fin)
                 df_compras = df_compras.loc[mask]
         
