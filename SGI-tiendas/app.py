@@ -216,8 +216,22 @@ elif menu == "📊 Dashboard de Inventario":
 elif menu == "🚨 Puntos de Reorden":
     st.title("🚨 Control de Puntos de Reorden")
     df_reorden = run_query("SELECT * FROM v_punto_reorden;") if rol == 'ADMINISTRADOR' else run_query("SELECT * FROM v_punto_reorden WHERE ID_Tienda = %s;", (id_tienda,))
+    
     if not df_reorden.empty:
-        st.warning(f"¡Atención! Hay {len(df_reorden)} productos que necesitan reposición.")
+        # Ponemos la alerta y el botón uno al lado del otro
+        col_alerta, col_btn = st.columns([3, 1])
+        with col_alerta:
+            st.warning(f"¡Atención! Hay {len(df_reorden)} productos que necesitan reposición.")
+        with col_btn:
+            if rol != 'ADMINISTRADOR':
+                st.button(
+                    "🛒 Reponer Stock",
+                    type="primary",
+                    use_container_width=True,
+                    on_click=cambiar_pantalla,
+                    args=("📥 Gestión de Ingresos",)
+                )
+
         st.dataframe(df_reorden, use_container_width=True)
         boton_exportar(df_reorden, "Puntos_Reorden")
     else:
