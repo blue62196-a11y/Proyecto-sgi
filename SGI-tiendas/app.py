@@ -3,12 +3,12 @@ import mysql.connector
 import pandas as pd
 import hashlib
 import datetime
-
-# Importamos todos los módulos de registro y administración
+# Importamos todos los módulos actualizados
 from form_venta import pantalla_registrar_venta
 from form_compra import pantalla_registrar_compra
-from form_traslado import pantalla_registrar_traslado
+from form_venta_interna import pantalla_venta_interna
 from form_admin import pantalla_admin
+from form_merma import pantalla_registrar_merma
 
 # Configuración inicial de la página
 st.set_page_config(
@@ -101,9 +101,11 @@ st.sidebar.caption(f"Rol: {st.session_state.user_role}")
 opciones = ["📊 Dashboard de Inventario", "🚨 Puntos de Reorden", "💰 Análisis de Ventas", "📦 Análisis de Compras"]
 
 if st.session_state.user_role.upper() != 'ADMINISTRADOR':
-    opciones.append("🛒 Registrar compra")
-    opciones.append("🧾 Registrar venta")
-    opciones.append("🚚 Registrar traslado")
+    # Menú 100% abierto para todos los encargados
+    opciones.append("📥 Gestión de Ingresos")
+    opciones.append("🧾 Venta a Cliente Externo")
+    opciones.append("🚚 Venta Interna (Despacho)")
+    opciones.append("🗑️ Control de Mermas")
 else:
     opciones.append("⚙️ Panel de Administración")
 
@@ -176,7 +178,6 @@ elif menu == "💰 Análisis de Ventas":
             df_ventas[col_fecha] = pd.to_datetime(df_ventas[col_fecha])
             
             st.markdown("### 📅 Filtrar Datos")
-            # SOLUCIÓN: Agrupamos los calendarios en un Formulario para evitar recargas automáticas
             with st.form("form_filtro_ventas"):
                 c1, c2 = st.columns(2)
                 inicio = c1.date_input("Fecha de Inicio", value=hace_un_mes)
@@ -220,7 +221,6 @@ elif menu == "📦 Análisis de Compras":
             df_compras[col_fecha] = pd.to_datetime(df_compras[col_fecha])
             
             st.markdown("### 📅 Filtrar Datos")
-            # SOLUCIÓN: Agrupamos los calendarios en un Formulario
             with st.form("form_filtro_compras"):
                 c1, c2 = st.columns(2)
                 inicio = c1.date_input("Fecha de Inicio", value=hace_un_mes)
@@ -247,14 +247,18 @@ elif menu == "📦 Análisis de Compras":
     else:
         st.info("No hay compras registradas.")
 
-elif menu == "🛒 Registrar compra":
+# --- ENRUTAMIENTO ACTUALIZADO ---
+elif menu == "📥 Gestión de Ingresos":
     pantalla_registrar_compra(get_connection)
-
-elif menu == "🧾 Registrar venta":
+    
+elif menu == "🧾 Venta a Cliente Externo":
     pantalla_registrar_venta(get_connection)
     
-elif menu == "🚚 Registrar traslado": 
-    pantalla_registrar_traslado(get_connection)
+elif menu == "🚚 Venta Interna (Despacho)": 
+    pantalla_venta_interna(get_connection)
+    
+elif menu == "🗑️ Control de Mermas":
+    pantalla_registrar_merma(get_connection)
 
 elif menu == "⚙️ Panel de Administración":
     pantalla_admin(get_connection)
