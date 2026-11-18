@@ -165,11 +165,11 @@ if menu == "🏠 Menú Principal":
     # Primera Fila: Reportes y Dashboard
     c1, c2, c3 = st.columns(3)
     with c1:
-        crear_tarjeta("📦", "Inventario Global", "Ver existencias y stock de productos", "👁️ Ver inventario", "📊 Dashboard de Inventario")
+        crear_tarjeta("📦", "Inventario Global", "Ver existencias y stock de productos", "Ver inventario", "📊 Dashboard de Inventario")
     with c2:
-        crear_tarjeta("💰", "Finanzas y Ventas", "Análisis de ventas e ingresos", "👁️ Ver ventas", "💰 Análisis de Ventas")
+        crear_tarjeta("💰", "Finanzas y Ventas", "Análisis de ventas e ingresos", "Ver ventas", "💰 Análisis de Ventas")
     with c3:
-        crear_tarjeta("📈", "Pronósticos y Reorden", "Alertas y compras sugeridas", "👁️ Ver pronósticos", "🚨 Puntos de Reorden")
+        crear_tarjeta("📈", "Pronósticos y Reorden", "Alertas y compras sugeridas", "Ver pronósticos", "🚨 Puntos de Reorden")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -177,7 +177,7 @@ if menu == "🏠 Menú Principal":
     if rol == 'ADMINISTRADOR':
         c4, c5, c6 = st.columns(3)
         with c4:
-            crear_tarjeta("📦", "Análisis de Compras", "Historial de compras registradas", "👁️ Ver compras", "📦 Análisis de Compras")
+            crear_tarjeta("📦", "Análisis de Compras", "Historial de compras registradas", "Ver compras", "📦 Análisis de Compras")
         with c5:
             crear_tarjeta("👑", "Administración", "Gestionar tiendas, usuarios y catálogo", "⚙️ Gestionar", "⚙️ Panel de Administración")
     else:
