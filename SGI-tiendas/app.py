@@ -3,7 +3,8 @@ import mysql.connector
 import pandas as pd
 import hashlib
 import datetime
-# Importamos todos los módulos actualizados
+
+# Importamos todos los módulos
 from form_venta import pantalla_registrar_venta
 from form_compra import pantalla_registrar_compra
 from form_venta_interna import pantalla_venta_interna
@@ -19,7 +20,6 @@ st.set_page_config(
 
 # --- 1. CONFIGURACIÓN DE CONEXIÓN A LA BASE DE DATOS ---
 def get_connection():
-    """Establece la conexión con la base de datos MySQL."""
     try:
         return mysql.connector.connect(
             host=st.secrets.get("DB_HOST", "localhost"),
@@ -33,21 +33,19 @@ def get_connection():
         return None
 
 def run_query(query, params=None):
-    """Ejecuta una consulta SQL y devuelve un DataFrame de Pandas."""
     conn = get_connection()
     if conn:
         try:
             df = pd.read_sql(query, conn, params=params)
-            conn.close()
             return df
         except Exception as e:
             st.error(f"Ocurrió un error en la consulta: {e}")
-            conn.close()
             return pd.DataFrame()
+        finally:
+            conn.close()
     return pd.DataFrame()
 
 def boton_exportar(df, nombre_archivo):
-    """Genera un botón estandarizado para descargar DataFrames en CSV."""
     csv = df.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="📥 Descargar en Excel / CSV",
@@ -64,6 +62,10 @@ if "logged_in" not in st.session_state:
     st.session_state.id_tienda = None
     st.session_state.id_usuario = None
 
+# Inicializamos el estado de la vista para poder navegar con botones
+if "vista_actual" not in st.session_state:
+    st.session_state.vista_actual = "🏠 Menú Principal"
+
 if not st.session_state.logged_in:
     st.title("🔐 SGI - Iniciar Sesión")
     st.markdown("Ingrese sus credenciales registradas en el sistema.")
@@ -75,7 +77,6 @@ if not st.session_state.logged_in:
         
         if submit:
             hashed_input = hashlib.sha256(password.encode()).hexdigest()
-
             conn = get_connection()
             if conn:
                 cursor = conn.cursor(dictionary=True)
@@ -94,37 +95,77 @@ if not st.session_state.logged_in:
                     st.error("Correo o contraseña incorrectos.")
     st.stop()
 
-# --- 3. MENÚ LATERAL Y NAVEGACIÓN ---
+# --- 3. FUNCIÓN PARA NAVEGAR Y DIBUJAR TARJETAS ---
+def cambiar_pantalla(nueva_pantalla):
+    st.session_state.vista_actual = nueva_pantalla
+
+def crear_tarjeta(icono, titulo, descripcion, texto_boton, vista_destino):
+    """Genera una tarjeta visual idéntica a tu diseño de referencia"""
+    with st.container(border=True):
+        st.markdown(f"<h1 style='text-align: center; margin-bottom: 0px;'>{icono}</h1>", unsafe_allow_html=True)
+        st.markdown(f"<h4 style='text-align: center; margin-bottom: 0px;'>{titulo}</h4>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align: center; color: gray; font-size: 14px;'>{descripcion}</p>", unsafe_allow_html=True)
+        st.button(texto_boton, use_container_width=True, type="primary", on_click=cambiar_pantalla, args=(vista_destino,), key=f"btn_{titulo}")
+
+# --- 4. MENÚ LATERAL ---
 st.sidebar.title(f"Bienvenido, {st.session_state.user_name}")
 st.sidebar.caption(f"Rol: {st.session_state.user_role}")
 
-opciones = ["📊 Dashboard de Inventario", "🚨 Puntos de Reorden", "💰 Análisis de Ventas", "📦 Análisis de Compras"]
+opciones = ["🏠 Menú Principal", "📊 Dashboard de Inventario", "🚨 Puntos de Reorden", "💰 Análisis de Ventas", "📦 Análisis de Compras"]
 
 if st.session_state.user_role.upper() != 'ADMINISTRADOR':
-    # Menú 100% abierto para todos los encargados
-    opciones.append("📥 Gestión de Ingresos")
-    opciones.append("🧾 Venta a Cliente Externo")
-    opciones.append("🚚 Venta Interna (Despacho)")
-    opciones.append("🗑️ Control de Mermas")
+    opciones.extend(["📥 Gestión de Ingresos", "🧾 Venta a Cliente Externo", "🚚 Venta Interna (Despacho)", "🗑️ Control de Mermas"])
 else:
     opciones.append("⚙️ Panel de Administración")
 
-menu = st.sidebar.radio("Navegación", opciones)
+# Conectamos el radio button al estado de sesión para que reaccione a los botones
+menu = st.sidebar.radio("Navegación", opciones, key="vista_actual")
 
 if st.sidebar.button("Cerrar Sesión"):
     st.session_state.clear()
     st.rerun()
 
-# --- 4. VISTAS DE LA APLICACIÓN ---
+# --- 5. VISTAS DE LA APLICACIÓN ---
 rol = st.session_state.user_role.upper()
 id_tienda = st.session_state.id_tienda
-
 hoy = datetime.date.today()
 hace_un_mes = hoy - datetime.timedelta(days=30)
 
-if menu == "📊 Dashboard de Inventario":
+if menu == "🏠 Menú Principal":
+    st.markdown("<h2 style='text-align: center;'>Gestiona tu negocio de manera eficiente</h2>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Primera Fila: Reportes y Dashboard
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        crear_tarjeta("📦", "Inventario Global", "Ver existencias y stock de productos", "👁️ Ver inventario", "📊 Dashboard de Inventario")
+    with c2:
+        crear_tarjeta("💰", "Finanzas y Ventas", "Análisis de ventas e ingresos", "👁️ Ver ventas", "💰 Análisis de Ventas")
+    with c3:
+        crear_tarjeta("📈", "Pronósticos y Reorden", "Alertas y compras sugeridas", "👁️ Ver pronósticos", "🚨 Puntos de Reorden")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Segunda Fila: Operaciones (Depende del Rol)
+    if rol == 'ADMINISTRADOR':
+        c4, c5, c6 = st.columns(3)
+        with c4:
+            crear_tarjeta("📦", "Análisis de Compras", "Historial de compras registradas", "👁️ Ver compras", "📦 Análisis de Compras")
+        with c5:
+            crear_tarjeta("👑", "Administración", "Gestionar tiendas, usuarios y catálogo", "⚙️ Gestionar", "⚙️ Panel de Administración")
+    else:
+        c4, c5, c6, c7 = st.columns(4)
+        with c4:
+            crear_tarjeta("📥", "Ingresos", "Recibe compras y traslados", "➕ Ingresar", "📥 Gestión de Ingresos")
+        with c5:
+            crear_tarjeta("🧾", "Ventas Externa", "Factura productos a clientes", "💲 Vender", "🧾 Venta a Cliente Externo")
+        with c6:
+            crear_tarjeta("🚚", "Despachos CD", "Traslada inventario al costo", "📤 Despachar", "🚚 Venta Interna (Despacho)")
+        with c7:
+            crear_tarjeta("🗑️", "Mermas", "Da de baja inventario dañado", "➖ Registrar Merma", "🗑️ Control de Mermas")
+
+elif menu == "📊 Dashboard de Inventario":
     st.title("📊 Dashboard de Inventario")
-    
     if rol == 'ADMINISTRADOR':
         st.markdown("Vista global: Existencias en toda la red.")
         df_inventario = run_query("SELECT * FROM v_inventario_actual;")
@@ -135,11 +176,9 @@ if menu == "📊 Dashboard de Inventario":
     if not df_inventario.empty:
         col_nombre = next((col for col in df_inventario.columns if col.upper() in ['NOMBRE', 'PRODUCTO', 'NOMBRE_PRODUCTO']), None)
         col_exist = next((col for col in df_inventario.columns if col.upper() in ['EXISTENCIAS', 'CANTIDAD', 'STOCK']), None)
-        
         if col_nombre and col_exist:
             st.subheader("🏆 Top 10 Productos con Mayor Stock")
-            df_chart = df_inventario.groupby(col_nombre)[col_exist].sum().nlargest(10).reset_index()
-            st.bar_chart(df_chart, x=col_nombre, y=col_exist, color=col_nombre)
+            st.bar_chart(df_inventario.groupby(col_nombre)[col_exist].sum().nlargest(10).reset_index(), x=col_nombre, y=col_exist, color=col_nombre)
             
         st.subheader("📋 Tabla de Existencias")
         st.dataframe(df_inventario, use_container_width=True)
@@ -149,12 +188,7 @@ if menu == "📊 Dashboard de Inventario":
 
 elif menu == "🚨 Puntos de Reorden":
     st.title("🚨 Control de Puntos de Reorden")
-    
-    if rol == 'ADMINISTRADOR':
-        df_reorden = run_query("SELECT * FROM v_punto_reorden;")
-    else:
-        df_reorden = run_query("SELECT * FROM v_punto_reorden WHERE ID_Tienda = %s;", (id_tienda,))
-        
+    df_reorden = run_query("SELECT * FROM v_punto_reorden;") if rol == 'ADMINISTRADOR' else run_query("SELECT * FROM v_punto_reorden WHERE ID_Tienda = %s;", (id_tienda,))
     if not df_reorden.empty:
         st.warning(f"¡Atención! Hay {len(df_reorden)} productos que necesitan reposición.")
         st.dataframe(df_reorden, use_container_width=True)
@@ -164,42 +198,28 @@ elif menu == "🚨 Puntos de Reorden":
 
 elif menu == "💰 Análisis de Ventas":
     st.title("💰 Análisis de Ventas")
-    
-    if rol == 'ADMINISTRADOR':
-        df_ventas = run_query("SELECT * FROM v_venta_total ORDER BY Fecha_Venta DESC;")
-    else:
-        df_ventas = run_query("SELECT * FROM v_venta_total WHERE ID_Tienda = %s ORDER BY Fecha_Venta DESC;", (id_tienda,))
-        
+    df_ventas = run_query("SELECT * FROM v_venta_total ORDER BY Fecha_Venta DESC;") if rol == 'ADMINISTRADOR' else run_query("SELECT * FROM v_venta_total WHERE ID_Tienda = %s ORDER BY Fecha_Venta DESC;", (id_tienda,))
     if not df_ventas.empty:
         col_fecha = next((col for col in df_ventas.columns if 'FECHA' in col.upper()), None)
         col_total = next((col for col in df_ventas.columns if col.upper() in ['TOTAL', 'MONTO', 'TOTAL_VENTA']), None)
-        
         if col_fecha:
             df_ventas[col_fecha] = pd.to_datetime(df_ventas[col_fecha])
-            
-            st.markdown("### 📅 Filtrar Datos")
             with st.form("form_filtro_ventas"):
                 c1, c2 = st.columns(2)
                 inicio = c1.date_input("Fecha de Inicio", value=hace_un_mes)
                 fin = c2.date_input("Fecha de Fin", value=hoy)
-                btn_filtrar = st.form_submit_button("Aplicar Filtro")
+                if st.form_submit_button("Aplicar Filtro"): pass
             
-            if inicio > fin:
-                st.error("La fecha de inicio no puede ser mayor a la fecha de fin.")
-            else:
-                mask = (df_ventas[col_fecha].dt.date >= inicio) & (df_ventas[col_fecha].dt.date <= fin)
-                df_ventas = df_ventas.loc[mask]
+            mask = (df_ventas[col_fecha].dt.date >= inicio) & (df_ventas[col_fecha].dt.date <= fin)
+            df_ventas = df_ventas.loc[mask]
         
         if df_ventas.empty:
             st.warning("No hay ventas registradas en este rango de fechas.")
         else:
             if col_fecha and col_total:
                 st.subheader("📈 Tendencia de Ingresos")
-                tendencia = df_ventas.groupby(col_fecha)[col_total].sum().reset_index()
-                st.line_chart(tendencia, x=col_fecha, y=col_total)
-                st.metric("Total Acumulado (Según Filtro)", f"${tendencia[col_total].sum():,.2f}")
-
-            st.subheader("📋 Historial de Registros")
+                st.line_chart(df_ventas.groupby(col_fecha)[col_total].sum().reset_index(), x=col_fecha, y=col_total)
+                st.metric("Total Acumulado", f"${df_ventas[col_total].sum():,.2f}")
             st.dataframe(df_ventas, use_container_width=True)
             boton_exportar(df_ventas, "Reporte_Ventas")
     else:
@@ -207,58 +227,40 @@ elif menu == "💰 Análisis de Ventas":
 
 elif menu == "📦 Análisis de Compras":
     st.title("📦 Análisis de Compras")
-    
-    if rol == 'ADMINISTRADOR':
-        df_compras = run_query("SELECT * FROM v_compra_total ORDER BY Fecha_Compra DESC;")
-    else:
-        df_compras = run_query("SELECT * FROM v_compra_total WHERE ID_Tienda = %s ORDER BY Fecha_Compra DESC;", (id_tienda,))
-        
+    df_compras = run_query("SELECT * FROM v_compra_total ORDER BY Fecha_Compra DESC;") if rol == 'ADMINISTRADOR' else run_query("SELECT * FROM v_compra_total WHERE ID_Tienda = %s ORDER BY Fecha_Compra DESC;", (id_tienda,))
     if not df_compras.empty:
         col_fecha = next((col for col in df_compras.columns if 'FECHA' in col.upper()), None)
         col_total = next((col for col in df_compras.columns if col.upper() in ['TOTAL', 'MONTO', 'TOTAL_COMPRA']), None)
-        
         if col_fecha:
             df_compras[col_fecha] = pd.to_datetime(df_compras[col_fecha])
-            
-            st.markdown("### 📅 Filtrar Datos")
             with st.form("form_filtro_compras"):
                 c1, c2 = st.columns(2)
                 inicio = c1.date_input("Fecha de Inicio", value=hace_un_mes)
                 fin = c2.date_input("Fecha de Fin", value=hoy)
-                btn_filtrar = st.form_submit_button("Aplicar Filtro")
+                if st.form_submit_button("Aplicar Filtro"): pass
             
-            if inicio > fin:
-                st.error("La fecha de inicio no puede ser mayor a la fecha de fin.")
-            else:
-                mask = (df_compras[col_fecha].dt.date >= inicio) & (df_compras[col_fecha].dt.date <= fin)
-                df_compras = df_compras.loc[mask]
+            mask = (df_compras[col_fecha].dt.date >= inicio) & (df_compras[col_fecha].dt.date <= fin)
+            df_compras = df_compras.loc[mask]
         
         if df_compras.empty:
-            st.warning("No hay compras registradas en este rango de fechas.")
+            st.warning("No hay compras registradas en este rango.")
         else:
             if col_fecha and col_total:
                 st.subheader("📉 Inversión en Compras")
-                tendencia = df_compras.groupby(col_fecha)[col_total].sum().reset_index()
-                st.bar_chart(tendencia, x=col_fecha, y=col_total)
-
-            st.subheader("📋 Historial de Registros")
+                st.bar_chart(df_compras.groupby(col_fecha)[col_total].sum().reset_index(), x=col_fecha, y=col_total)
             st.dataframe(df_compras, use_container_width=True)
             boton_exportar(df_compras, "Reporte_Compras")
     else:
         st.info("No hay compras registradas.")
 
-# --- ENRUTAMIENTO ACTUALIZADO ---
+# --- ENRUTAMIENTO DE MODULOS ---
 elif menu == "📥 Gestión de Ingresos":
     pantalla_registrar_compra(get_connection)
-    
 elif menu == "🧾 Venta a Cliente Externo":
     pantalla_registrar_venta(get_connection)
-    
 elif menu == "🚚 Venta Interna (Despacho)": 
     pantalla_venta_interna(get_connection)
-    
 elif menu == "🗑️ Control de Mermas":
     pantalla_registrar_merma(get_connection)
-
 elif menu == "⚙️ Panel de Administración":
     pantalla_admin(get_connection)
