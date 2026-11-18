@@ -106,7 +106,7 @@ if not st.session_state.logged_in:
                             st.error("Correo o contraseña incorrectos.")
     st.stop()
 
-# --- 3. FUNCIÓN PARA NAVEGAR Y DIBUJAR TARJETAS ---
+# --- 3. FUNCIONES DE NAVEGACIÓN Y TARJETAS ---
 def cambiar_pantalla(nueva_pantalla):
     st.session_state.vista_actual = nueva_pantalla
 
@@ -127,6 +127,9 @@ def crear_tarjeta(icono, titulo, descripcion, texto_boton, vista_destino):
 # --- 4. BARRA DE NAVEGACIÓN SUPERIOR (SIN SIDEBAR) ---
 menu = st.session_state.vista_actual
 rol = st.session_state.user_role.upper()
+id_tienda = st.session_state.id_tienda
+hoy = datetime.date.today()
+hace_un_mes = hoy - datetime.timedelta(days=30)
 
 opciones = [
     "🏠 Menú Principal",
@@ -140,7 +143,7 @@ if rol != 'ADMINISTRADOR':
     opciones.extend([
         "📥 Gestión de Ingresos",
         "🧾 Venta a Cliente Externo",
-        "🚚 Venta Interna (Despacho)",
+        "🚚 Venta Interna (Al Costo)",
         "🗑️ Control de Mermas"
     ])
 else:
@@ -155,13 +158,20 @@ with col_salir:
         st.session_state.clear()
         st.rerun()
 
-# Solo mostramos la barra de botones rápidos cuando NO estamos en el Menú Principal
+# Barra de botones rápidos (solo visible cuando no estamos en el Menú Principal)
 if menu != "🏠 Menú Principal":
     cols_nav = st.columns(len(opciones))
     for idx, op in enumerate(opciones):
         tipo_btn = "primary" if op == menu else "secondary"
-        # Acortamos un poco el texto para que quepan bien en una sola fila
-        etiqueta = op.replace(" de Inventario", "").replace("Análisis de ", "").replace("Panel de ", "").replace("Gestión de ", "").replace("Control de ", "")
+        etiqueta = (
+            op.replace(" de Inventario", "")
+            .replace("Análisis de ", "")
+            .replace("Panel de ", "")
+            .replace("Gestión de ", "")
+            .replace("Control de ", "")
+            .replace(" a Cliente Externo", " Externa")
+            .replace(" (Al Costo)", "")
+        )
         cols_nav[idx].button(
             etiqueta,
             key=f"nav_{idx}",
@@ -173,11 +183,6 @@ if menu != "🏠 Menú Principal":
     st.divider()
 
 # --- 5. VISTAS DE LA APLICACIÓN ---
-rol = st.session_state.user_role.upper()
-id_tienda = st.session_state.id_tienda
-hoy = datetime.date.today()
-hace_un_mes = hoy - datetime.timedelta(days=30)
-
 if menu == "🏠 Menú Principal":
     st.markdown("<h2 style='text-align: center;'>Gestiona tu negocio de manera eficiente</h2>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
@@ -185,11 +190,11 @@ if menu == "🏠 Menú Principal":
     # Primera Fila: Reportes y Dashboard
     c1, c2, c3 = st.columns(3)
     with c1:
-        crear_tarjeta("📦", "Inventario Global", "Ver existencias y stock de productos", "Ver inventario", "📊 Dashboard de Inventario")
+        crear_tarjeta("📦", "Inventario y Vencimientos", "Existencias y alertas de lotes", "Ver inventario", "📊 Dashboard de Inventario")
     with c2:
         crear_tarjeta("💰", "Finanzas y Ventas", "Análisis de ventas e ingresos", "Ver ventas", "💰 Análisis de Ventas")
     with c3:
-        crear_tarjeta("📈", "Pronósticos y Reorden", "Alertas y compras sugeridas", "Ver pronósticos", "🚨 Puntos de Reorden")
+        crear_tarjeta("📈", "Pronósticos y Reorden", "Alertas y pedidos sugeridos", "Ver pronósticos", "🚨 Puntos de Reorden")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -197,28 +202,61 @@ if menu == "🏠 Menú Principal":
     if rol == 'ADMINISTRADOR':
         c4, c5, c6 = st.columns(3)
         with c4:
-            crear_tarjeta("📦", "Análisis de Compras", "Historial de compras registradas", "Ver compras", "📦 Análisis de Compras")
+            crear_tarjeta("📦", "Compras y Costos", "Historial y comparativa de costos", "Ver compras", "📦 Análisis de Compras")
         with c5:
             crear_tarjeta("👑", "Administración", "Gestionar tiendas, usuarios y catálogo", "⚙️ Gestionar", "⚙️ Panel de Administración")
     else:
         c4, c5, c6, c7 = st.columns(4)
         with c4:
-            crear_tarjeta("📥", "Ingresos", "Recibe compras y traslados", "➕ Ingresar", "📥 Gestión de Ingresos")
+            crear_tarjeta("📥", "Ingresos", "Compras y recepción de traslados", "➕ Ingresar", "📥 Gestión de Ingresos")
         with c5:
-            crear_tarjeta("🧾", "Ventas Externas", "Factura productos a clientes", "💲 Vender", "🧾 Venta a Cliente Externo")
+            crear_tarjeta("🧾", "Venta Externa", "Clientes a precio normal", "💲 Vender", "🧾 Venta a Cliente Externo")
         with c6:
-            crear_tarjeta("🚚", "Despachos CD", "Traslada inventario al costo", "📤 Despachar", "🚚 Venta Interna (Despacho)")
+            crear_tarjeta("🚚", "Venta Interna", "A otras tiendas al costo", "📤 Despachar", "🚚 Venta Interna (Al Costo)")
         with c7:
-            crear_tarjeta("🗑️", "Mermas", "Da de baja inventario dañado", "➖ Registrar Merma", "🗑️ Control de Mermas")
+            crear_tarjeta("🗑️", "Mermas", "Baja de inventario dañado", "➖ Registrar Merma", "🗑️ Control de Mermas")
 
 elif menu == "📊 Dashboard de Inventario":
-    st.title("📊 Dashboard de Inventario")
+    st.title("📊 Dashboard de Inventario y Vencimientos")
     if rol == 'ADMINISTRADOR':
         st.markdown("Vista global: Existencias en toda la red.")
         df_inventario = run_query("SELECT * FROM v_inventario_actual;")
+        df_vencer = run_query("""
+            SELECT T.Nombre AS Tienda, P.Cod_Producto, P.Nombre AS Producto,
+                   I.Fecha_Vencimiento, I.Existencias,
+                   DATEDIFF(I.Fecha_Vencimiento, CURDATE()) AS Dias_Restantes
+            FROM inventario I
+            JOIN producto P ON I.ID_Producto = P.ID_Producto
+            JOIN tienda T ON I.ID_Tienda = T.ID_Tienda
+            WHERE I.Existencias > 0
+              AND I.Fecha_Vencimiento < '9999-12-31'
+              AND I.Fecha_Vencimiento <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+            ORDER BY I.Fecha_Vencimiento ASC;
+        """)
     else:
         st.markdown(f"Vista local: Existencias de la Tienda {id_tienda}.")
         df_inventario = run_query("SELECT * FROM v_inventario_actual WHERE ID_Tienda = %s;", (id_tienda,))
+        df_vencer = run_query("""
+            SELECT P.Cod_Producto, P.Nombre AS Producto,
+                   I.Fecha_Vencimiento, I.Existencias,
+                   DATEDIFF(I.Fecha_Vencimiento, CURDATE()) AS Dias_Restantes
+            FROM inventario I
+            JOIN producto P ON I.ID_Producto = P.ID_Producto
+            WHERE I.ID_Tienda = %s
+              AND I.Existencias > 0
+              AND I.Fecha_Vencimiento < '9999-12-31'
+              AND I.Fecha_Vencimiento <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+            ORDER BY I.Fecha_Vencimiento ASC;
+        """, (id_tienda,))
+
+    # Alertas de productos por vencer (Proceso 6 del DFD)
+    if not df_vencer.empty:
+        st.error(f"⏳ Alerta de Vencimientos: Hay {len(df_vencer)} lote(s) vencidos o por vencer en los próximos 30 días.")
+        with st.expander("Ver detalle de lotes por vencer", expanded=True):
+            st.dataframe(df_vencer, use_container_width=True, hide_index=True)
+            boton_exportar(df_vencer, "Alertas_Vencimiento")
+    else:
+        st.success("✅ No hay lotes próximos a vencer en los próximos 30 días.")
 
     if not df_inventario.empty:
         col_nombre = next((col for col in df_inventario.columns if col.upper() in ['NOMBRE', 'PRODUCTO', 'NOMBRE_PRODUCTO']), None)
@@ -236,9 +274,8 @@ elif menu == "📊 Dashboard de Inventario":
 elif menu == "🚨 Puntos de Reorden":
     st.title("🚨 Control de Puntos de Reorden")
     df_reorden = run_query("SELECT * FROM v_punto_reorden;") if rol == 'ADMINISTRADOR' else run_query("SELECT * FROM v_punto_reorden WHERE ID_Tienda = %s;", (id_tienda,))
-    
+
     if not df_reorden.empty:
-        # Ponemos la alerta y el botón uno al lado del otro
         col_alerta, col_btn = st.columns([3, 1])
         with col_alerta:
             st.warning(f"¡Atención! Hay {len(df_reorden)} productos que necesitan reposición.")
@@ -251,9 +288,30 @@ elif menu == "🚨 Puntos de Reorden":
                     on_click=cambiar_pantalla,
                     args=("📥 Gestión de Ingresos",)
                 )
+            else:
+                st.button(
+                    "📦 Ver Compras",
+                    type="primary",
+                    use_container_width=True,
+                    on_click=cambiar_pantalla,
+                    args=("📦 Análisis de Compras",)
+                )
 
         st.dataframe(df_reorden, use_container_width=True)
-        boton_exportar(df_reorden, "Puntos_Reorden")
+
+        c_exp, c_ped = st.columns(2)
+        with c_exp:
+            boton_exportar(df_reorden, "Puntos_Reorden")
+        with c_ped:
+            # Generar Pedido de Compra (Proceso 7 -> Proveedor)
+            pedido_txt = f"PEDIDO DE COMPRA - FECHA: {hoy}\n" + "=" * 45 + "\n"
+            pedido_txt += df_reorden.to_string(index=False)
+            st.download_button(
+                label="📄 Generar Pedido de Compra (.txt)",
+                data=pedido_txt.encode("utf-8"),
+                file_name=f"Pedido_Compra_{hoy}.txt",
+                mime="text/plain"
+            )
     else:
         st.success("Todos los productos están por encima de su punto de reorden. ¡Excelente!")
 
@@ -320,12 +378,35 @@ elif menu == "📦 Análisis de Compras":
     else:
         st.info("No hay compras registradas.")
 
+    # Comparación de costos CD vs. Proveedores (Proceso 7 del DFD)
+    if rol == 'ADMINISTRADOR':
+        st.divider()
+        st.subheader("⚖️ Comparación de Costos (CD vs. Proveedores)")
+        df_costos = run_query("""
+            SELECT P.Cod_Producto, P.Nombre AS Producto,
+                   T.Nombre AS Tienda,
+                   PR.Nombre AS Proveedor,
+                   PP.Ultimo_Costo,
+                   PP.Fecha_Ultimo_Costo
+            FROM producto_proveedor PP
+            JOIN producto P ON PP.ID_Producto = P.ID_Producto
+            JOIN proveedor PR ON PP.ID_Proveedor = PR.ID_Proveedor
+            JOIN tienda T ON PR.ID_Tienda = T.ID_Tienda
+            WHERE PP.Estado = 'ACTIVO'
+            ORDER BY P.Nombre, PP.Ultimo_Costo ASC;
+        """)
+        if not df_costos.empty:
+            st.dataframe(df_costos, use_container_width=True, hide_index=True)
+            boton_exportar(df_costos, "Comparacion_Costos")
+        else:
+            st.info("Aún no hay suficientes registros de costos por proveedor para comparar.")
+
 # --- ENRUTAMIENTO DE MÓDULOS ---
 elif menu == "📥 Gestión de Ingresos":
     pantalla_registrar_compra(get_connection)
 elif menu == "🧾 Venta a Cliente Externo":
     pantalla_registrar_venta(get_connection)
-elif menu == "🚚 Venta Interna (Despacho)":
+elif menu == "🚚 Venta Interna (Al Costo)":
     pantalla_venta_interna(get_connection)
 elif menu == "🗑️ Control de Mermas":
     pantalla_registrar_merma(get_connection)
