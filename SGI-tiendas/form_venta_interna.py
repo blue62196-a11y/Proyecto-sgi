@@ -2,13 +2,15 @@ import streamlit as st
 import pandas as pd
 from decimal import Decimal, ROUND_HALF_UP
 
-class ErrorNegocio(Exception): pass
+class ErrorNegocio(Exception): 
+    pass
 
 def _dec(valor):
     return Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
-    if not lineas: raise ErrorNegocio("No hay productos en la nota.")
+    if not lineas: 
+        raise ErrorNegocio("No hay productos en la nota.")
     
     cur = conn.cursor(dictionary=True)
     try:
@@ -21,7 +23,7 @@ def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
         )
         id_traslado = cur.lastrowid
 
-        # 2. Registrar venta del CD a precio de costo (simulada o real según tu BD)
+        # 2. Registrar venta del CD a precio de costo
         cur.execute(
             "INSERT INTO venta (ID_Tienda, ID_Usuario, Fecha_Venta, Total_Venta) VALUES (%s, %s, CURDATE(), %s)",
             (id_cd, id_usuario, sum(l['subtotal'] for l in lineas))
@@ -32,9 +34,11 @@ def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
             cantidad, costo = _dec(l["cantidad"]), _dec(l["costo"])
             id_prod = l["id_producto"]
             
-            # Verificar stock en CD
+            # Verificar stock
             cur.execute("SELECT SUM(Existencias) as Disp FROM inventario WHERE ID_Tienda = %s AND ID_Producto = %s", (id_cd, id_prod))
-            disp = cur.fetchone()["Disp"] or 0
+            stock_data = cur.fetchone()
+            disp = stock_data["Disp"] if stock_data and stock_data["Disp"] else 0
+            
             if _dec(disp) < cantidad:
                 raise ErrorNegocio(f"Stock insuficiente para {l['nombre']}. Hay {disp}.")
 
@@ -45,7 +49,7 @@ def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
             cur.execute("INSERT INTO detalle_venta (ID_Venta, ID_Producto, Cantidad, Precio_Unitario, Subtotal) VALUES (%s, %s, %s, %s, %s)",
                         (id_venta, id_prod, cantidad, costo, cantidad * costo))
 
-            # Restar del inventario del CD (Pero NO sumamos a la tienda destino aún)
+            # Restar del inventario del origen (NO sumamos al destino aún)
             cur.execute("UPDATE inventario SET Existencias = Existencias - %s WHERE ID_Tienda = %s AND ID_Producto = %s LIMIT 1", (cantidad, id_cd, id_prod))
 
         conn.commit()
@@ -68,35 +72,42 @@ def _consultar(get_connection, sql, params=()):
     return []
 
 def pantalla_venta_interna(get_connection):
-    st.title("🚚 Despacho CD (Venta Interna)")
-    st.markdown("Envía productos a sucursales en estado 'En Tránsito'.")
+    st.title("🚚 Despacho a Tiendas (Venta Interna)")
+    st.markdown("Registra la salida del inventario al costo y lo envía en estado 'En Tránsito'.")
 
     id_tienda = st.session_state.id_tienda
     
-    # Solo permitir acceso si es el CD (asumiendo que el CD tiene un ID específico, ej. 1)
-    # Si tienes una bandera en BD, puedes validarlo aquí.
-    
     tiendas = _consultar(get_connection, "SELECT ID_Tienda, Nombre FROM tienda WHERE ID_Tienda != %s", (id_tienda,))
-    if not tiendas: return st.warning("No hay sucursales destino.")
+    if not tiendas: 
+        st.warning("No hay otras sucursales destino registradas.")
+        return
     
     tiendas_opts = {t["Nombre"]: t["ID_Tienda"] for t in tiendas}
-    id_destino = tiendas_opts[st.selectbox("Tienda Destino", list(tiendas_opts.keys()))]
+    id_destino = tiendas_opts[st.selectbox("Tienda Destino (Cliente Interno)", list(tiendas_opts.keys()))]
 
     productos = _consultar(get_connection, "SELECT P.ID_Producto, P.Cod_Producto, P.Nombre, SUM(I.Existencias) as Disp FROM inventario I JOIN producto P ON I.ID_Producto = P.ID_Producto WHERE I.ID_Tienda = %s AND I.Existencias > 0 GROUP BY P.ID_Producto", (id_tienda,))
     
-    if not productos: return st.info("No hay inventario en el CD.")
+    if not productos: 
+        st.info("No hay inventario disponible para despachar.")
+        return
 
-    if "carrito_vi" not in st.session_state: st.session_state.carrito_vi = []
+    if "carrito_vi" not in st.session_state: 
+        st.session_state.carrito_vi = []
 
     prod_opts = {f"{p['Cod_Producto']} - {p['Nombre']} (Disp: {p['Disp']})": p for p in productos}
+    
+    st.subheader("Agregar Productos")
     c1, c2, c3, c4 = st.columns([3, 1, 1, 2])
     prod_sel = prod_opts[c1.selectbox("Producto", list(prod_opts.keys()))]
+    
+    # Sin max_value para evitar el error automático de Streamlit en inglés
     cantidad = c2.number_input("Cant.", min_value=1, value=1)
     costo = c3.number_input("Costo $", min_value=0.01, value=1.00)
 
     if c4.button("➕ Agregar al despacho", use_container_width=True):
+        # Validación completamente en español
         if cantidad > int(prod_sel['Disp']):
-            st.error("Excede el stock disponible.")
+            st.error(f"⚠️ Error: Excede el stock disponible. Solo hay {prod_sel['Disp']}.")
         else:
             st.session_state.carrito_vi.append({
                 "id_producto": prod_sel["ID_Producto"], "nombre": prod_sel["Nombre"],
@@ -104,12 +115,28 @@ def pantalla_venta_interna(get_connection):
             })
             st.rerun()
 
-    if st.session_state.carrito_vi:
-        st.dataframe(pd.DataFrame(st.session_state.carrito_vi), use_container_width=True)
+    carrito = st.session_state.carrito_vi
+    if carrito:
+        st.dataframe(pd.DataFrame(carrito), use_container_width=True, hide_index=True)
+        
+        total = sum(l["subtotal"] for l in carrito)
+        st.markdown(f"### Valor del Despacho: **${total:,.2f}**")
+        
+        if st.button("Vaciar lista"):
+            st.session_state.carrito_vi = []
+            st.rerun()
+            
         if st.button("✅ Confirmar Salida de CD", type="primary"):
-            try:
-                id_t, id_v = registrar_venta_interna(get_connection(), id_tienda, id_destino, st.session_state.id_usuario, st.session_state.carrito_vi)
-                st.success(f"Despacho exitoso. Traslado #{id_t} en tránsito.")
-                st.session_state.carrito_vi = []
-            except ErrorNegocio as e:
-                st.error(str(e))
+            # ABRIMOS Y CERRAMOS LA CONEXIÓN CORRECTAMENTE PARA NO BOTAR EL SERVIDOR
+            conn = get_connection()
+            if conn:
+                try:
+                    id_t, id_v = registrar_venta_interna(conn, id_tienda, id_destino, st.session_state.id_usuario, carrito)
+                    st.success(f"Despacho exitoso. El Traslado #{id_t} está ahora 'En Tránsito'.")
+                    st.session_state.carrito_vi = []
+                except ErrorNegocio as e:
+                    st.error(str(e))
+                except Exception as e:
+                    st.error(f"Error procesando la salida: {e}")
+                finally:
+                    conn.close()
