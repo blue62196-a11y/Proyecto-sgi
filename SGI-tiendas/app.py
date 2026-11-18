@@ -124,9 +124,9 @@ def crear_tarjeta(icono, titulo, descripcion, texto_boton, vista_destino):
             key=f"btn_{titulo}"
         )
 
-# --- 4. MENÚ LATERAL ---
-st.sidebar.title(f"Bienvenido, {st.session_state.user_name}")
-st.sidebar.caption(f"Rol: {st.session_state.user_role}")
+# --- 4. BARRA DE NAVEGACIÓN SUPERIOR (SIN SIDEBAR) ---
+menu = st.session_state.vista_actual
+rol = st.session_state.user_role.upper()
 
 opciones = [
     "🏠 Menú Principal",
@@ -136,7 +136,7 @@ opciones = [
     "📦 Análisis de Compras"
 ]
 
-if st.session_state.user_role.upper() != 'ADMINISTRADOR':
+if rol != 'ADMINISTRADOR':
     opciones.extend([
         "📥 Gestión de Ingresos",
         "🧾 Venta a Cliente Externo",
@@ -146,11 +146,31 @@ if st.session_state.user_role.upper() != 'ADMINISTRADOR':
 else:
     opciones.append("⚙️ Panel de Administración")
 
-menu = st.sidebar.radio("Navegación", opciones, key="vista_actual")
+# Cabecera discreta con usuario y botón de salir
+col_user, col_salir = st.columns([6, 1])
+with col_user:
+    st.caption(f"👤 **{st.session_state.user_name}** · Rol: {st.session_state.user_role}")
+with col_salir:
+    if st.button("🚪 Salir", use_container_width=True):
+        st.session_state.clear()
+        st.rerun()
 
-if st.sidebar.button("Cerrar Sesión"):
-    st.session_state.clear()
-    st.rerun()
+# Solo mostramos la barra de botones rápidos cuando NO estamos en el Menú Principal
+if menu != "🏠 Menú Principal":
+    cols_nav = st.columns(len(opciones))
+    for idx, op in enumerate(opciones):
+        tipo_btn = "primary" if op == menu else "secondary"
+        # Acortamos un poco el texto para que quepan bien en una sola fila
+        etiqueta = op.replace(" de Inventario", "").replace("Análisis de ", "").replace("Panel de ", "").replace("Gestión de ", "").replace("Control de ", "")
+        cols_nav[idx].button(
+            etiqueta,
+            key=f"nav_{idx}",
+            type=tipo_btn,
+            use_container_width=True,
+            on_click=cambiar_pantalla,
+            args=(op,)
+        )
+    st.divider()
 
 # --- 5. VISTAS DE LA APLICACIÓN ---
 rol = st.session_state.user_role.upper()
