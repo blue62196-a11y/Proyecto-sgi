@@ -94,12 +94,6 @@ def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
             if disp_total < cantidad:
                 raise ErrorNegocio(f"Stock insuficiente para {l['nombre']}. Hay {disp_total}.")
 
-            # Detalle traslado
-            cur.execute(
-                "INSERT INTO detalle_traslado (ID_Traslado, ID_Producto, Cantidad) VALUES (%s, %s, %s)",
-                (id_traslado, id_prod, cantidad)
-            )
-
             # Descontar lote por lote y registrar en detalle_venta con ID_Inventario y Precio_Venta
             restante = cantidad
             for lote in lotes:
