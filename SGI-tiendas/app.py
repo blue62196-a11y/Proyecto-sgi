@@ -333,7 +333,10 @@ elif menu == "🚨 Puntos de Reorden":
         df_plan = df_reorden.copy()
 
         if not df_demanda.empty and {'ID_Tienda', 'ID_Producto'}.issubset(df_plan.columns):
+            df_plan = df_plan.drop(columns=['Demanda_Diaria'], errors='ignore')
             df_plan = df_plan.merge(df_demanda, on=['ID_Tienda', 'ID_Producto'], how='left')
+            df_plan['Demanda_Diaria'] = df_plan['Demanda_Diaria'].fillna(0.0)
+        elif 'Demanda_Diaria' in df_plan.columns:
             df_plan['Demanda_Diaria'] = df_plan['Demanda_Diaria'].fillna(0.0)
         else:
             df_plan['Demanda_Diaria'] = 0.0
