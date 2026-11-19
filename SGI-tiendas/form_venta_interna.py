@@ -16,7 +16,14 @@ def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
     try:
         conn.start_transaction()
 
-# 1. Crear el traslado adaptándose a las columnas y ENUM reales de la tabla
+        # 1. Registrar PRIMERO la venta interna para obtener el ID_Venta
+        cur.execute(
+            "INSERT INTO venta (ID_Tienda, ID_Usuario, Cliente_Nombre) VALUES (%s, %s, %s)",
+            (id_cd, id_usuario, f"Traslado a Tienda #{id_tienda_destino}")
+        )
+        id_venta = cur.lastrowid
+
+        # 2. Crear el traslado pasándole ID_Venta y adaptándose a las columnas/ENUM reales
         cur.execute("SHOW COLUMNS FROM traslado")
         cols_info = {row["Field"].upper(): row for row in cur.fetchall()}
 
@@ -24,6 +31,10 @@ def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
         valores = []
         placeholders = []
 
+        if "ID_VENTA" in cols_info:
+            campos.append(cols_info["ID_VENTA"]["Field"])
+            valores.append(id_venta)
+            placeholders.append("%s")
         if "ID_TIENDA_ORIGEN" in cols_info:
             campos.append(cols_info["ID_TIENDA_ORIGEN"]["Field"])
             valores.append(id_cd)
@@ -57,13 +68,6 @@ def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
         sql_traslado = f"INSERT INTO traslado ({', '.join(campos)}) VALUES ({', '.join(placeholders)})"
         cur.execute(sql_traslado, tuple(valores))
         id_traslado = cur.lastrowid
-
-        # 2. Registrar venta interna en la tabla venta (sin Total_Venta)
-        cur.execute(
-            "INSERT INTO venta (ID_Tienda, ID_Usuario, Cliente_Nombre) VALUES (%s, %s, %s)",
-            (id_cd, id_usuario, f"Traslado a Tienda #{id_tienda_destino}")
-        )
-        id_venta = cur.lastrowid
 
         for l in lineas:
             cantidad = _dec(l["cantidad"])
