@@ -249,7 +249,7 @@ elif menu == "📊 Dashboard de Inventario":
             ORDER BY I.Fecha_Vencimiento ASC;
         """, (id_tienda,))
 
-    # Alertas de productos por vencer (Proceso 6 del DFD)
+    # Alertas de productos por vencer (próximos 30 días)
     if not df_vencer.empty:
         st.error(f"⏳ Alerta de Vencimientos: Hay {len(df_vencer)} lote(s) vencidos o por vencer en los próximos 30 días.")
         with st.expander("Ver detalle de lotes por vencer", expanded=True):
@@ -307,37 +307,37 @@ elif menu == "🚨 Puntos de Reorden":
             min_value=7, max_value=60, value=15, step=1
         )
 
-        # Consultar demanda diaria promedio (últimos 30 días)
+        # Consultar demanda diaria promedio (últimos 30 días) usando ID_Inventario
         if rol == 'ADMINISTRADOR':
             df_demanda = run_query("""
-                SELECT V.ID_Tienda, DV.ID_Producto,
+                SELECT V.ID_Tienda, I.ID_Producto,
                        ROUND(SUM(DV.Cantidad) / 30, 2) AS Demanda_Diaria
                 FROM detalle_venta DV
                 JOIN venta V ON DV.ID_Venta = V.ID_Venta
+                JOIN inventario I ON DV.ID_Inventario = I.ID_Inventario
                 WHERE V.Fecha_Venta >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-                GROUP BY V.ID_Tienda, DV.ID_Producto;
+                GROUP BY V.ID_Tienda, I.ID_Producto;
             """)
         else:
             df_demanda = run_query("""
-                SELECT V.ID_Tienda, DV.ID_Producto,
+                SELECT V.ID_Tienda, I.ID_Producto,
                        ROUND(SUM(DV.Cantidad) / 30, 2) AS Demanda_Diaria
                 FROM detalle_venta DV
                 JOIN venta V ON DV.ID_Venta = V.ID_Venta
+                JOIN inventario I ON DV.ID_Inventario = I.ID_Inventario
                 WHERE V.ID_Tienda = %s
                   AND V.Fecha_Venta >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-                GROUP BY V.ID_Tienda, DV.ID_Producto;
+                GROUP BY V.ID_Tienda, I.ID_Producto;
             """, (id_tienda,))
 
         df_plan = df_reorden.copy()
 
-        # Unir demanda diaria si las columnas clave coinciden
         if not df_demanda.empty and {'ID_Tienda', 'ID_Producto'}.issubset(df_plan.columns):
             df_plan = df_plan.merge(df_demanda, on=['ID_Tienda', 'ID_Producto'], how='left')
             df_plan['Demanda_Diaria'] = df_plan['Demanda_Diaria'].fillna(0.0)
         else:
             df_plan['Demanda_Diaria'] = 0.0
 
-        # Detectar columnas de existencias y punto de reorden en la vista
         col_stock = next((c for c in df_plan.columns if c.upper() in ['EXISTENCIAS', 'STOCK', 'STOCK_ACTUAL', 'CANTIDAD']), None)
         col_rop = next((c for c in df_plan.columns if 'REORDEN' in c.upper() or 'MINIMO' in c.upper()), None)
 
@@ -358,7 +358,7 @@ elif menu == "🚨 Puntos de Reorden":
                 dem = float(row['Demanda_Diaria'])
                 rop = float(row[col_rop]) if col_rop and pd.notnull(row[col_rop]) else 10.0
                 if dem > 0:
-                    sugerido = int(-(- (dem * dias_cobertura - stock) // 1))  # redondeo hacia arriba
+                    sugerido = int(-(- (dem * dias_cobertura - stock) // 1))
                 else:
                     sugerido = int(max(rop * 2 - stock, rop))
                 return max(sugerido, 1)
@@ -376,46 +376,6 @@ elif menu == "🚨 Puntos de Reorden":
             pedido_txt = f"PEDIDO DE COMPRA SUGERIDO - FECHA: {hoy}\n"
             pedido_txt += f"Cobertura proyectada: {dias_cobertura} días\n" + "=" * 55 + "\n"
             pedido_txt += df_plan.to_string(index=False)
-            st.download_button(
-                label="📄 Generar Pedido de Compra (.txt)",
-                data=pedido_txt.encode("utf-8"),
-                file_name=f"Pedido_Compra_{hoy}.txt",
-                mime="text/plain"
-            )
-    else:
-        st.success("Todos los productos están por encima de su punto de reorden. ¡Excelente!")
-
-    if not df_reorden.empty:
-        col_alerta, col_btn = st.columns([3, 1])
-        with col_alerta:
-            st.warning(f"¡Atención! Hay {len(df_reorden)} productos que necesitan reposición.")
-        with col_btn:
-            if rol != 'ADMINISTRADOR':
-                st.button(
-                    "🛒 Reponer Stock",
-                    type="primary",
-                    use_container_width=True,
-                    on_click=cambiar_pantalla,
-                    args=("📥 Gestión de Ingresos",)
-                )
-            else:
-                st.button(
-                    "📦 Ver Compras",
-                    type="primary",
-                    use_container_width=True,
-                    on_click=cambiar_pantalla,
-                    args=("📦 Análisis de Compras",)
-                )
-
-        st.dataframe(df_reorden, use_container_width=True)
-
-        c_exp, c_ped = st.columns(2)
-        with c_exp:
-            boton_exportar(df_reorden, "Puntos_Reorden")
-        with c_ped:
-            # Generar Pedido de Compra (Proceso 7 -> Proveedor)
-            pedido_txt = f"PEDIDO DE COMPRA - FECHA: {hoy}\n" + "=" * 45 + "\n"
-            pedido_txt += df_reorden.to_string(index=False)
             st.download_button(
                 label="📄 Generar Pedido de Compra (.txt)",
                 data=pedido_txt.encode("utf-8"),
@@ -488,7 +448,7 @@ elif menu == "📦 Análisis de Compras":
     else:
         st.info("No hay compras registradas.")
 
-    # Comparación de costos CD vs. Proveedores (Proceso 7 del DFD)
+    # Comparación de costos CD vs. Proveedores
     if rol == 'ADMINISTRADOR':
         st.divider()
         st.subheader("⚖️ Comparación de Costos (CD vs. Proveedores)")
