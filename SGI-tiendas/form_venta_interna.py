@@ -16,12 +16,40 @@ def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
     try:
         conn.start_transaction()
 
-        # 1. Crear el traslado en estado "EN TRANSITO"
-        cur.execute(
-            "INSERT INTO traslado (ID_Tienda_Origen, ID_Tienda_Destino, ID_Usuario, Fecha_Traslado, Estado_Traslado) "
-            "VALUES (%s, %s, %s, CURDATE(), 'EN TRANSITO')",
-            (id_cd, id_tienda_destino, id_usuario)
-        )
+        # 1. Crear el traslado adaptándose a las columnas reales de la tabla
+        cur.execute("SHOW COLUMNS FROM traslado")
+        cols_traslado = {row["Field"].upper(): row["Field"] for row in cur.fetchall()}
+
+        campos = []
+        valores = []
+        placeholders = []
+
+        if "ID_TIENDA_ORIGEN" in cols_traslado:
+            campos.append(cols_traslado["ID_TIENDA_ORIGEN"])
+            valores.append(id_cd)
+            placeholders.append("%s")
+        if "ID_TIENDA_DESTINO" in cols_traslado:
+            campos.append(cols_traslado["ID_TIENDA_DESTINO"])
+            valores.append(id_tienda_destino)
+            placeholders.append("%s")
+        if "ID_USUARIO" in cols_traslado:
+            campos.append(cols_traslado["ID_USUARIO"])
+            valores.append(id_usuario)
+            placeholders.append("%s")
+        if "FECHA_TRASLADO" in cols_traslado:
+            campos.append(cols_traslado["FECHA_TRASLADO"])
+            placeholders.append("CURDATE()")
+        if "ESTADO_TRASLADO" in cols_traslado:
+            campos.append(cols_traslado["ESTADO_TRASLADO"])
+            valores.append("EN TRANSITO")
+            placeholders.append("%s")
+        elif "ESTADO" in cols_traslado:
+            campos.append(cols_traslado["ESTADO"])
+            valores.append("EN TRANSITO")
+            placeholders.append("%s")
+
+        sql_traslado = f"INSERT INTO traslado ({', '.join(campos)}) VALUES ({', '.join(placeholders)})"
+        cur.execute(sql_traslado, tuple(valores))
         id_traslado = cur.lastrowid
 
         # 2. Registrar venta interna en la tabla venta (sin Total_Venta)
