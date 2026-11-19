@@ -279,7 +279,18 @@ elif menu == "🚨 Puntos de Reorden":
         else run_query("SELECT * FROM v_punto_reorden WHERE ID_Tienda = %s;", (id_tienda,))
     )
 
+    # Filtrar solo los productos que realmente están en o por debajo de su punto de reorden
     if not df_reorden.empty:
+        col_stock_tmp = next((c for c in df_reorden.columns if c.upper() in ['EXISTENCIAS', 'STOCK', 'STOCK_ACTUAL', 'CANTIDAD']), None)
+        col_rop_tmp = next((c for c in df_reorden.columns if 'REORDEN' in c.upper() or 'MINIMO' in c.upper()), None)
+        if col_stock_tmp and col_rop_tmp:
+            df_reorden = df_reorden[
+                pd.to_numeric(df_reorden[col_stock_tmp], errors='coerce').fillna(0)
+                <= pd.to_numeric(df_reorden[col_rop_tmp], errors='coerce').fillna(0)
+            ].copy()
+
+    if not df_reorden.empty:
+        
         col_alerta, col_btn = st.columns([3, 1])
         with col_alerta:
             st.warning(f"¡Atención! Hay {len(df_reorden)} producto(s) por debajo de su punto de reorden.")
