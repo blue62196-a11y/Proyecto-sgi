@@ -1,33 +1,16 @@
 """
 Registro de compras - SGI Tiendas / Centro de Distribución.
-
-Qué hace una compra, paso a paso (todo dentro de UNA transacción):
-  1. Crea el encabezado en `compra` (tienda, proveedor y usuario que la registra).
-  2. Por cada producto agrega una línea en `detalle_compra`
-     (cantidad, precio de compra, vencimiento y precio de venta sugerido, estos dos opcionales).
-  3. SUMA al inventario del lote (tienda + producto + vencimiento). Si el lote ya existe,
-     le suma la cantidad; si no, lo crea (aprovecha la clave única uq_inv_lote).
-  4. Actualiza la relación producto-proveedor (último costo y fecha), que es la
-     relación muchos a muchos del enunciado y alimenta la vista v_costo_cd.
-  5. Si algo falla hace ROLLBACK: no queda nada a medias.
-
-Reglas:
-  - Una compra siempre se registra en la tienda del usuario (el CD funciona igual: es una tienda más).
-  - Los productos se eligen del catálogo global; aquí NO se crean productos nuevos.
-  - El CD como proveedor de una tienda NO se registra aquí: esa compra la genera el
-    traslado cuando la tienda confirma que recibió físicamente los productos.
-  - Los totales no se guardan: salen de la vista v_compra_total.
+Incluye Pestaña de Compra Externa y Pestaña de Recepción de Traslados (Venta Interna del CD).
 """
-#Incluye Pestaña de Compra Externa y Pestaña de Recepción de Traslados (Venta Interna del CD).
 
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
 import pandas as pd
 
-from form_venta import ErrorNegocio  # Mantenemos tu import original de errores
+from form_venta import ErrorNegocio
 
-SIN_VENCIMIENTO = date(9999, 12, 31) 
+SIN_VENCIMIENTO = date(9999, 12, 31)
 
 def _dec(valor):
     return Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -82,17 +65,22 @@ def registrar_compra(conn, id_tienda, id_usuario, id_proveedor, lineas, hoy=None
                 cur.execute("INSERT INTO producto_tienda (ID_Tienda, ID_Producto, Precio_Venta) VALUES (%s, %s, %s)", (id_tienda, l["id_producto"], sugerido))
 
             cur.execute(
-                """INSERT INTO detalle_compra (ID_Compra, ID_Producto, Cantidad, Precio_Compra, Fecha_Vencimiento, Precio_Venta_Sugerido) VALUES (%s, %s, %s, %s, %s, %s)""",
+                """INSERT INTO detalle_compra (ID_Compra, ID_Producto, Cantidad, Precio_Compra, Fecha_Vencimiento, Precio_Venta_Sugerido)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (id_compra, l["id_producto"], cantidad, precio, l.get("vencimiento"), sugerido),
             )
 
             cur.execute(
-                """INSERT INTO inventario (ID_Tienda, ID_Producto, Fecha_Vencimiento, Existencias) VALUES (%s, %s, %s, %s) ON DUPLICATE KEY UPDATE Existencias = Existencias + VALUES(Existencias)""",
+                """INSERT INTO inventario (ID_Tienda, ID_Producto, Fecha_Vencimiento, Existencias)
+                   VALUES (%s, %s, %s, %s)
+                   ON DUPLICATE KEY UPDATE Existencias = Existencias + VALUES(Existencias)""",
                 (id_tienda, l["id_producto"], l.get("vencimiento") or SIN_VENCIMIENTO, cantidad),
             )
 
             cur.execute(
-                """INSERT INTO producto_proveedor (ID_Producto, ID_Proveedor, Ultimo_Costo, Fecha_Ultimo_Costo, Estado) VALUES (%s, %s, %s, CURDATE(), 'ACTIVO') ON DUPLICATE KEY UPDATE Ultimo_Costo = VALUES(Ultimo_Costo), Fecha_Ultimo_Costo = VALUES(Fecha_Ultimo_Costo), Estado = 'ACTIVO'""",
+                """INSERT INTO producto_proveedor (ID_Producto, ID_Proveedor, Ultimo_Costo, Fecha_Ultimo_Costo, Estado)
+                   VALUES (%s, %s, %s, CURDATE(), 'ACTIVO')
+                   ON DUPLICATE KEY UPDATE Ultimo_Costo = VALUES(Ultimo_Costo), Fecha_Ultimo_Costo = VALUES(Fecha_Ultimo_Costo), Estado = 'ACTIVO'""",
                 (l["id_producto"], id_proveedor, precio),
             )
             total += cantidad * precio
@@ -107,7 +95,8 @@ def registrar_compra(conn, id_tienda, id_usuario, id_proveedor, lineas, hoy=None
 
 def registrar_proveedor(conn, id_tienda, nombre, dui_nit, telefono, correo, direccion):
     nombre = (nombre or "").strip()
-    if not nombre: raise ErrorNegocio("El nombre del proveedor es obligatorio.")
+    if not nombre:
+        raise ErrorNegocio("El nombre del proveedor es obligatorio.")
     def _o_null(txt): return (txt or "").strip() or None
     cur = conn.cursor()
     try:
@@ -125,20 +114,106 @@ def registrar_proveedor(conn, id_tienda, nombre, dui_nit, telefono, correo, dire
     finally:
         cur.close()
 
+def _info_tabla_traslado(cur):
+    """Detecta nombres exactos de columnas y valores ENUM en la tabla traslado."""
+    cur.execute("SHOW COLUMNS FROM traslado")
+    cols_info = {row["Field"].upper(): row for row in cur.fetchall()}
+
+    col_estado_row = cols_info.get("ESTADO_TRASLADO") or cols_info.get("ESTADO")
+    col_estado = col_estado_row["Field"] if col_estado_row else "Estado"
+
+    val_transito = "EN TRANSITO"
+    val_recibido = "RECIBIDO"
+    if col_estado_row and str(col_estado_row["Type"]).lower().startswith("enum("):
+        opts = [v.strip().strip("'\"") for v in str(col_estado_row["Type"])[5:-1].split(",")]
+        val_transito = next((o for o in opts if "TRANSIT" in o.upper() or "PEND" in o.upper()), opts[0])
+        val_recibido = next((o for o in opts if "RECIB" in o.upper() or "COMPLET" in o.upper() or "ENTREG" in o.upper()), opts[-1])
+
+    col_fecha_row = cols_info.get("FECHA_TRASLADO") or cols_info.get("FECHA_ENVIO") or cols_info.get("FECHA")
+    col_fecha = col_fecha_row["Field"] if col_fecha_row else None
+
+    return cols_info, col_estado, val_transito, val_recibido, col_fecha
+
 def recibir_traslado_bd(conn, id_traslado, id_tienda, id_usuario):
     cur = conn.cursor(dictionary=True)
     try:
         conn.start_transaction()
-        cur.execute("UPDATE traslado SET Estado_Traslado = 'RECIBIDO' WHERE ID_Traslado = %s", (id_traslado,))
-        cur.execute("SELECT ID_Producto, Cantidad FROM detalle_traslado WHERE ID_Traslado = %s", (id_traslado,))
+        cols_info, col_estado, _, val_recibido, _ = _info_tabla_traslado(cur)
+
+        # 1. Obtener datos del traslado (incluyendo ID_Venta e ID_Tienda_Origen)
+        cur.execute("SELECT * FROM traslado WHERE ID_Traslado = %s FOR UPDATE", (id_traslado,))
+        traslado = cur.fetchone()
+        if not traslado:
+            raise ErrorNegocio("No se encontró el traslado.")
+
+        id_venta = traslado.get("ID_Venta")
+        id_origen = traslado.get("ID_Tienda_Origen")
+
+        # 2. Traer los productos, cantidades, costos y vencimientos desde detalle_venta + inventario
+        cur.execute("""
+            SELECT I.ID_Producto, DV.Cantidad, DV.Precio_Venta AS Costo, I.Fecha_Vencimiento
+            FROM detalle_venta DV
+            JOIN inventario I ON DV.ID_Inventario = I.ID_Inventario
+            WHERE DV.ID_Venta = %s
+        """, (id_venta,))
         detalles = cur.fetchall()
-        cur.execute("INSERT INTO compra (ID_Tienda, ID_Proveedor, ID_Usuario) VALUES (%s, NULL, %s)", (id_tienda, id_usuario))
+        if not detalles:
+            raise ErrorNegocio("El traslado no tiene productos asociados en detalle_venta.")
+
+        # 3. Buscar el proveedor interno que representa al CD para esta tienda (si existe)
+        cur.execute(
+            "SELECT ID_Proveedor FROM proveedor WHERE ID_Tienda = %s AND ID_Tienda_CD = %s LIMIT 1",
+            (id_tienda, id_origen)
+        )
+        prov_cd = cur.fetchone()
+        if not prov_cd:
+            cur.execute(
+                "SELECT ID_Proveedor FROM proveedor WHERE ID_Tienda = %s AND ID_Tienda_CD IS NOT NULL LIMIT 1",
+                (id_tienda,)
+            )
+            prov_cd = cur.fetchone()
+        id_proveedor = prov_cd["ID_Proveedor"] if prov_cd else None
+
+        # 4. Registrar la compra interna en la tienda destino
+        cur.execute(
+            "INSERT INTO compra (ID_Tienda, ID_Proveedor, ID_Usuario) VALUES (%s, %s, %s)",
+            (id_tienda, id_proveedor, id_usuario)
+        )
         id_compra = cur.lastrowid
-        
+
+        # 5. Insertar detalle_compra y sumar al inventario respetando la fecha de vencimiento original
         for d in detalles:
-            cur.execute("INSERT INTO detalle_compra (ID_Compra, ID_Producto, Cantidad, Precio_Compra) VALUES (%s, %s, %s, 0)", (id_compra, d["ID_Producto"], d["Cantidad"]))
-            cur.execute("""INSERT INTO inventario (ID_Tienda, ID_Producto, Fecha_Vencimiento, Existencias) VALUES (%s, %s, '9999-12-31', %s) ON DUPLICATE KEY UPDATE Existencias = Existencias + VALUES(Existencias)""", (id_tienda, d["ID_Producto"], d["Cantidad"]))
-            
+            venc = d["Fecha_Vencimiento"] or SIN_VENCIMIENTO
+            venc_detalle = None if venc == SIN_VENCIMIENTO else venc
+
+            cur.execute(
+                """INSERT INTO detalle_compra (ID_Compra, ID_Producto, Cantidad, Precio_Compra, Fecha_Vencimiento)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (id_compra, d["ID_Producto"], d["Cantidad"], d["Costo"], venc_detalle)
+            )
+            cur.execute(
+                """INSERT INTO inventario (ID_Tienda, ID_Producto, Fecha_Vencimiento, Existencias)
+                   VALUES (%s, %s, %s, %s)
+                   ON DUPLICATE KEY UPDATE Existencias = Existencias + VALUES(Existencias)""",
+                (id_tienda, d["ID_Producto"], venc, d["Cantidad"])
+            )
+
+        # 6. Actualizar el estado del traslado a RECIBIDO (y columnas opcionales si existen)
+        sets = [f"{col_estado} = %s"]
+        params_upd = [val_recibido]
+
+        if "ID_COMPRA" in cols_info:
+            sets.append(f"{cols_info['ID_COMPRA']['Field']} = %s")
+            params_upd.append(id_compra)
+        if "ID_USUARIO_RECIBE" in cols_info:
+            sets.append(f"{cols_info['ID_USUARIO_RECIBE']['Field']} = %s")
+            params_upd.append(id_usuario)
+        if "FECHA_RECEPCION" in cols_info:
+            sets.append(f"{cols_info['FECHA_RECEPCION']['Field']} = CURDATE()")
+
+        params_upd.append(id_traslado)
+        cur.execute(f"UPDATE traslado SET {', '.join(sets)} WHERE ID_Traslado = %s", tuple(params_upd))
+
         conn.commit()
         return id_compra
     except Exception:
@@ -149,7 +224,8 @@ def recibir_traslado_bd(conn, id_traslado, id_tienda, id_usuario):
 
 def _consultar(get_connection, sql, params=()):
     conn = get_connection()
-    if conn is None: return []
+    if conn is None:
+        return []
     try:
         cur = conn.cursor(dictionary=True)
         cur.execute(sql, params)
@@ -220,7 +296,6 @@ def pantalla_registrar_compra(get_connection):
 
                 b1, b2, b3 = st.columns([1.5, 2, 2.5])
                 vence = b1.checkbox("Tiene vencimiento")
-                # AQUI ESTA LA RESTRICCION VISUAL DE FECHA MINIMA
                 fecha_venc = b2.date_input("Fecha de vencimiento", value=date.today(), min_value=date.today(), disabled=not vence)
                 sugerido = b3.number_input("Precio sugerido (0 = no definir)", min_value=0.0, value=0.0, step=0.25)
 
@@ -266,31 +341,51 @@ def pantalla_registrar_compra(get_connection):
     # ------------------ PESTAÑA 2: RECEPCIÓN DE TRASLADOS ------------------
     with tab_recepcion:
         st.subheader("Mercadería en Tránsito (Desde otras sucursales)")
-        pendientes = _consultar(get_connection, """
-            SELECT T.ID_Traslado, T.Fecha_Traslado, Ti.Nombre as Origen 
-            FROM traslado T 
-            JOIN tienda Ti ON T.ID_Tienda_Origen = Ti.ID_Tienda 
-            WHERE T.ID_Tienda_Destino = %s AND T.Estado_Traslado = 'EN TRANSITO'
-        """, (id_tienda,))
-        
+        if "recepcion_ok" in st.session_state:
+            st.success(st.session_state.pop("recepcion_ok"))
+
+        pendientes = []
+        conn_check = get_connection()
+        if conn_check:
+            try:
+                cur_c = conn_check.cursor(dictionary=True)
+                _, col_estado, val_transito, _, col_fecha = _info_tabla_traslado(cur_c)
+                sel_fecha = f"T.{col_fecha} AS Fecha_Envio" if col_fecha else "CURDATE() AS Fecha_Envio"
+                cur_c.execute(f"""
+                    SELECT T.ID_Traslado, T.ID_Venta, {sel_fecha}, Ti.Nombre AS Origen
+                    FROM traslado T
+                    JOIN tienda Ti ON T.ID_Tienda_Origen = Ti.ID_Tienda
+                    WHERE T.ID_Tienda_Destino = %s AND T.{col_estado} = %s
+                """, (id_tienda, val_transito))
+                pendientes = cur_c.fetchall()
+            finally:
+                conn_check.close()
+
         if not pendientes:
             st.success("🎉 No hay envíos pendientes de recepción hacia esta tienda.")
         else:
             for p in pendientes:
-                with st.expander(f"📦 Traslado #{p['ID_Traslado']} - Viene de: {p['Origen']} (Despachado: {p['Fecha_Traslado']})"):
+                with st.expander(f"📦 Traslado #{p['ID_Traslado']} - Viene de: {p['Origen']} (Despachado: {p['Fecha_Envio']})", expanded=True):
                     detalles = _consultar(get_connection, """
-                        SELECT P.Cod_Producto, P.Nombre, DT.Cantidad 
-                        FROM detalle_traslado DT 
-                        JOIN producto P ON DT.ID_Producto = P.ID_Producto 
-                        WHERE DT.ID_Traslado = %s
-                    """, (p['ID_Traslado'],))
-                    
-                    st.dataframe(pd.DataFrame(detalles), hide_index=True)
-                    
-                    if st.button(f"📥 Confirmar Recepción Física (Ingresar a inventario)", key=f"btn_rec_{p['ID_Traslado']}", type="primary"):
-                        try:
-                            id_c = recibir_traslado_bd(get_connection, p['ID_Traslado'], id_tienda, id_usuario)
-                            st.success(f"Inventario recibido. Se generó el ingreso #{id_c}.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error al procesar la recepción: {e}")
+                        SELECT P.Cod_Producto, P.Nombre, DV.Cantidad, DV.Precio_Venta AS Costo, I.Fecha_Vencimiento
+                        FROM detalle_venta DV
+                        JOIN inventario I ON DV.ID_Inventario = I.ID_Inventario
+                        JOIN producto P ON I.ID_Producto = P.ID_Producto
+                        WHERE DV.ID_Venta = %s
+                    """, (p['ID_Venta'],))
+
+                    st.dataframe(pd.DataFrame(detalles), use_container_width=True, hide_index=True)
+
+                    if st.button("📥 Confirmar Recepción Física (Ingresar a inventario)", key=f"btn_rec_{p['ID_Traslado']}", type="primary"):
+                        conn_rec = get_connection()
+                        if conn_rec:
+                            try:
+                                id_c = recibir_traslado_bd(conn_rec, p['ID_Traslado'], id_tienda, id_usuario)
+                                st.session_state.recepcion_ok = f"Inventario recibido. Se generó el ingreso #{id_c}."
+                                st.rerun()
+                            except ErrorNegocio as e:
+                                st.error(str(e))
+                            except Exception as e:
+                                st.error(f"Error al procesar la recepción: {e}")
+                            finally:
+                                conn_rec.close()
