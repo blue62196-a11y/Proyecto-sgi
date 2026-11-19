@@ -43,12 +43,19 @@ def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
             campos.append(cols_info["ID_TIENDA_DESTINO"]["Field"])
             valores.append(id_tienda_destino)
             placeholders.append("%s")
-        if "ID_USUARIO" in cols_info:
+        if "ID_USUARIO_ENVIA" in cols_info:
+            campos.append(cols_info["ID_USUARIO_ENVIA"]["Field"])
+            valores.append(id_usuario)
+            placeholders.append("%s")
+        elif "ID_USUARIO" in cols_info:
             campos.append(cols_info["ID_USUARIO"]["Field"])
             valores.append(id_usuario)
             placeholders.append("%s")
         if "FECHA_TRASLADO" in cols_info:
             campos.append(cols_info["FECHA_TRASLADO"]["Field"])
+            placeholders.append("CURDATE()")
+        elif "FECHA_ENVIO" in cols_info:
+            campos.append(cols_info["FECHA_ENVIO"]["Field"])
             placeholders.append("CURDATE()")
 
         col_estado = cols_info.get("ESTADO_TRASLADO") or cols_info.get("ESTADO")
