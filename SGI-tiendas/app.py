@@ -3,7 +3,6 @@ import mysql.connector
 import pandas as pd
 import hashlib
 import datetime
-
 # Importamos todos los módulos
 from form_venta import pantalla_registrar_venta
 from form_compra import pantalla_registrar_compra
@@ -290,7 +289,6 @@ elif menu == "🚨 Puntos de Reorden":
             ].copy()
 
     if not df_reorden.empty:
-        
         col_alerta, col_btn = st.columns([3, 1])
         with col_alerta:
             st.warning(f"¡Atención! Hay {len(df_reorden)} producto(s) por debajo de su punto de reorden.")
@@ -426,7 +424,7 @@ elif menu == "💰 Análisis de Ventas":
                 st.subheader("📈 Tendencia de Ingresos")
                 st.line_chart(df_ventas.groupby(col_fecha)[col_total].sum().reset_index(), x=col_fecha, y=col_total)
                 st.metric("Total Acumulado", f"${df_ventas[col_total].sum():,.2f}")
-            st.dataframe(df_ventas, use_container_width=True)
+            st.dataframe(df_ventas, use_container_width=True, hide_index=True)
             boton_exportar(df_ventas, "Reporte_Ventas")
     else:
         st.info("No hay ventas registradas.")
@@ -457,7 +455,7 @@ elif menu == "📦 Análisis de Compras":
             if col_fecha and col_total:
                 st.subheader("📉 Inversión en Compras")
                 st.bar_chart(df_compras.groupby(col_fecha)[col_total].sum().reset_index(), x=col_fecha, y=col_total)
-            st.dataframe(df_compras, use_container_width=True)
+            st.dataframe(df_compras, use_container_width=True, hide_index=True)
             boton_exportar(df_compras, "Reporte_Compras")
     else:
         st.info("No hay compras registradas.")
