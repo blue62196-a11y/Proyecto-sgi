@@ -16,36 +16,42 @@ def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
     try:
         conn.start_transaction()
 
-        # 1. Crear el traslado adaptándose a las columnas reales de la tabla
+# 1. Crear el traslado adaptándose a las columnas y ENUM reales de la tabla
         cur.execute("SHOW COLUMNS FROM traslado")
-        cols_traslado = {row["Field"].upper(): row["Field"] for row in cur.fetchall()}
+        cols_info = {row["Field"].upper(): row for row in cur.fetchall()}
 
         campos = []
         valores = []
         placeholders = []
 
-        if "ID_TIENDA_ORIGEN" in cols_traslado:
-            campos.append(cols_traslado["ID_TIENDA_ORIGEN"])
+        if "ID_TIENDA_ORIGEN" in cols_info:
+            campos.append(cols_info["ID_TIENDA_ORIGEN"]["Field"])
             valores.append(id_cd)
             placeholders.append("%s")
-        if "ID_TIENDA_DESTINO" in cols_traslado:
-            campos.append(cols_traslado["ID_TIENDA_DESTINO"])
+        if "ID_TIENDA_DESTINO" in cols_info:
+            campos.append(cols_info["ID_TIENDA_DESTINO"]["Field"])
             valores.append(id_tienda_destino)
             placeholders.append("%s")
-        if "ID_USUARIO" in cols_traslado:
-            campos.append(cols_traslado["ID_USUARIO"])
+        if "ID_USUARIO" in cols_info:
+            campos.append(cols_info["ID_USUARIO"]["Field"])
             valores.append(id_usuario)
             placeholders.append("%s")
-        if "FECHA_TRASLADO" in cols_traslado:
-            campos.append(cols_traslado["FECHA_TRASLADO"])
+        if "FECHA_TRASLADO" in cols_info:
+            campos.append(cols_info["FECHA_TRASLADO"]["Field"])
             placeholders.append("CURDATE()")
-        if "ESTADO_TRASLADO" in cols_traslado:
-            campos.append(cols_traslado["ESTADO_TRASLADO"])
-            valores.append("EN TRANSITO")
-            placeholders.append("%s")
-        elif "ESTADO" in cols_traslado:
-            campos.append(cols_traslado["ESTADO"])
-            valores.append("EN TRANSITO")
+
+        col_estado = cols_info.get("ESTADO_TRASLADO") or cols_info.get("ESTADO")
+        if col_estado:
+            tipo = str(col_estado["Type"])
+            estado_val = "EN TRANSITO"
+            if tipo.lower().startswith("enum("):
+                opciones_enum = [v.strip().strip("'\"") for v in tipo[5:-1].split(",")]
+                estado_val = next(
+                    (o for o in opciones_enum if "TRANSIT" in o.upper() or "PEND" in o.upper()),
+                    opciones_enum[0]
+                )
+            campos.append(col_estado["Field"])
+            valores.append(estado_val)
             placeholders.append("%s")
 
         sql_traslado = f"INSERT INTO traslado ({', '.join(campos)}) VALUES ({', '.join(placeholders)})"
