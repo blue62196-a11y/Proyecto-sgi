@@ -266,7 +266,7 @@ elif menu == "📊 Dashboard de Inventario":
             st.bar_chart(df_inventario.groupby(col_nombre)[col_exist].sum().nlargest(10).reset_index(), x=col_nombre, y=col_exist, color=col_nombre)
 
         st.subheader("📋 Tabla de Existencias")
-        st.dataframe(df_inventario, use_container_width=True)
+        st.dataframe(df_inventario, use_container_width=True, hide_index=True)
         boton_exportar(df_inventario, "Inventario_Actual")
     else:
         st.info("No hay registros de inventario disponibles.")
