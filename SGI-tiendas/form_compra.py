@@ -114,48 +114,24 @@ def registrar_proveedor(conn, id_tienda, nombre, dui_nit, telefono, correo, dire
     finally:
         cur.close()
 
-def _info_tabla_traslado(cur):
-    """Detecta nombres exactos de columnas y valores ENUM en la tabla traslado."""
-    cur.execute("""
-        SELECT COLUMN_NAME AS Field, COLUMN_TYPE AS Type
-        FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND LOWER(TABLE_NAME) = 'traslado'
-    """)
-    rows = cur.fetchall()
-    cols_info = {row["Field"].upper(): row for row in rows}
-
-    col_estado_row = cols_info.get("ESTADO_TRASLADO") or cols_info.get("ESTADO")
-    col_estado = col_estado_row["Field"] if col_estado_row else "Estado"
-
-    val_transito = "EN TRANSITO"
-    val_recibido = "RECIBIDO"
-    if col_estado_row and str(col_estado_row["Type"]).lower().startswith("enum("):
-        opts = [v.strip().strip("'\"") for v in str(col_estado_row["Type"])[5:-1].split(",")]
-        val_transito = next((o for o in opts if "TRANSIT" in o.upper() or "PEND" in o.upper()), opts[0])
-        val_recibido = next((o for o in opts if "RECIB" in o.upper() or "COMPLET" in o.upper() or "ENTREG" in o.upper()), opts[-1])
-
-    col_fecha_row = cols_info.get("FECHA_TRASLADO") or cols_info.get("FECHA_ENVIO") or cols_info.get("FECHA")
-    col_fecha = col_fecha_row["Field"] if col_fecha_row else None
-
-    return cols_info, col_estado, val_transito, val_recibido, col_fecha
-
-def recibir_traslado_bd(conn, id_traslado, id_tienda, id_usuario):
+def recibir_traslado_bd(conn, id_venta, id_tienda, id_usuario):
     cur = conn.cursor(dictionary=True)
     try:
         conn.start_transaction()
-        cols_info, col_estado, _, val_recibido, _ = _info_tabla_traslado(cur)
 
-        # 1. Obtener datos del traslado (incluyendo ID_Venta e ID_Tienda_Origen)
-        cur.execute("SELECT * FROM traslado WHERE ID_Traslado = %s FOR UPDATE", (id_traslado,))
-        traslado = cur.fetchone()
-        if not traslado:
-            raise ErrorNegocio("No se encontró el traslado.")
+        # 1. Bloquear y validar que el envío sigue pendiente para esta tienda
+        etiqueta_esperada = f"ENVIO_PENDIENTE_TIENDA_{id_tienda}"
+        cur.execute(
+            "SELECT ID_Venta, ID_Tienda, Cliente_Nombre FROM venta WHERE ID_Venta = %s FOR UPDATE",
+            (id_venta,)
+        )
+        venta = cur.fetchone()
+        if not venta or venta["Cliente_Nombre"] != etiqueta_esperada:
+            raise ErrorNegocio("Este envío ya fue recibido o no corresponde a esta tienda.")
 
-        id_venta = traslado.get("ID_Venta")
-        id_origen = traslado.get("ID_Tienda_Origen")
+        id_origen = venta["ID_Tienda"]
 
-        # 2. Traer los productos, cantidades, costos y vencimientos desde detalle_venta + inventario
+        # 2. Traer productos, cantidades, costos y vencimientos desde detalle_venta + inventario
         cur.execute("""
             SELECT I.ID_Producto, DV.Cantidad, DV.Precio_Venta AS Costo, I.Fecha_Vencimiento
             FROM detalle_venta DV
@@ -164,7 +140,7 @@ def recibir_traslado_bd(conn, id_traslado, id_tienda, id_usuario):
         """, (id_venta,))
         detalles = cur.fetchall()
         if not detalles:
-            raise ErrorNegocio("El traslado no tiene productos asociados en detalle_venta.")
+            raise ErrorNegocio("El envío no tiene productos asociados.")
 
         # 3. Buscar el proveedor interno que representa al CD para esta tienda (si existe)
         cur.execute(
@@ -204,21 +180,11 @@ def recibir_traslado_bd(conn, id_traslado, id_tienda, id_usuario):
                 (id_tienda, d["ID_Producto"], venc, d["Cantidad"])
             )
 
-        # 6. Actualizar el estado del traslado a RECIBIDO (y columnas opcionales si existen)
-        sets = [f"{col_estado} = %s"]
-        params_upd = [val_recibido]
-
-        if "ID_COMPRA" in cols_info:
-            sets.append(f"{cols_info['ID_COMPRA']['Field']} = %s")
-            params_upd.append(id_compra)
-        if "ID_USUARIO_RECIBE" in cols_info:
-            sets.append(f"{cols_info['ID_USUARIO_RECIBE']['Field']} = %s")
-            params_upd.append(id_usuario)
-        if "FECHA_RECEPCION" in cols_info:
-            sets.append(f"{cols_info['FECHA_RECEPCION']['Field']} = CURDATE()")
-
-        params_upd.append(id_traslado)
-        cur.execute(f"UPDATE traslado SET {', '.join(sets)} WHERE ID_Traslado = %s", tuple(params_upd))
+        # 6. Marcar la venta interna como recibida
+        cur.execute(
+            "UPDATE venta SET Cliente_Nombre = %s WHERE ID_Venta = %s",
+            (f"TRASLADO_RECIBIDO_TIENDA_{id_tienda}", id_venta)
+        )
 
         conn.commit()
         return id_compra
@@ -350,30 +316,24 @@ def pantalla_registrar_compra(get_connection):
         if "recepcion_ok" in st.session_state:
             st.success(st.session_state.pop("recepcion_ok"))
 
+        etiqueta_pendiente = f"ENVIO_PENDIENTE_TIENDA_{id_tienda}"
         pendientes = []
-        conn_check = get_connection()
-        if conn_check:
-            try:
-                cur_c = conn_check.cursor(dictionary=True)
-                _, col_estado, val_transito, _, col_fecha = _info_tabla_traslado(cur_c)
-                sel_fecha = f"T.{col_fecha} AS Fecha_Envio" if col_fecha else "CURDATE() AS Fecha_Envio"
-                cur_c.execute(f"""
-                    SELECT T.ID_Traslado, T.ID_Venta, {sel_fecha}, Ti.Nombre AS Origen
-                    FROM traslado T
-                    JOIN tienda Ti ON T.ID_Tienda_Origen = Ti.ID_Tienda
-                    WHERE T.ID_Tienda_Destino = %s AND T.{col_estado} = %s
-                """, (id_tienda, val_transito))
-                pendientes = cur_c.fetchall()
-            except Exception as e:
-                st.error(f"Error consultando traslados: {e}")
-            finally:
-                conn_check.close()
+        try:
+            pendientes = _consultar(get_connection, """
+                SELECT V.ID_Venta, V.Fecha_Venta, Ti.Nombre AS Origen
+                FROM venta V
+                JOIN tienda Ti ON V.ID_Tienda = Ti.ID_Tienda
+                WHERE V.Cliente_Nombre = %s
+                ORDER BY V.Fecha_Venta DESC, V.ID_Venta DESC
+            """, (etiqueta_pendiente,))
+        except Exception as e:
+            st.error(f"Error consultando envíos pendientes: {e}")
 
         if not pendientes:
             st.success("🎉 No hay envíos pendientes de recepción hacia esta tienda.")
         else:
             for p in pendientes:
-                with st.expander(f"📦 Traslado #{p['ID_Traslado']} - Viene de: {p['Origen']} (Despachado: {p['Fecha_Envio']})", expanded=True):
+                with st.expander(f"📦 Envío #{p['ID_Venta']} - Viene de: {p['Origen']} (Despachado: {p['Fecha_Venta']})", expanded=True):
                     detalles = _consultar(get_connection, """
                         SELECT P.Cod_Producto, P.Nombre, DV.Cantidad, DV.Precio_Venta AS Costo, I.Fecha_Vencimiento
                         FROM detalle_venta DV
@@ -384,11 +344,11 @@ def pantalla_registrar_compra(get_connection):
 
                     st.dataframe(pd.DataFrame(detalles), use_container_width=True, hide_index=True)
 
-                    if st.button("📥 Confirmar Recepción Física (Ingresar a inventario)", key=f"btn_rec_{p['ID_Traslado']}", type="primary"):
+                    if st.button("📥 Confirmar Recepción Física (Ingresar a inventario)", key=f"btn_rec_{p['ID_Venta']}", type="primary"):
                         conn_rec = get_connection()
                         if conn_rec:
                             try:
-                                id_c = recibir_traslado_bd(conn_rec, p['ID_Traslado'], id_tienda, id_usuario)
+                                id_c = recibir_traslado_bd(conn_rec, p['ID_Venta'], id_tienda, id_usuario)
                                 st.session_state.recepcion_ok = f"Inventario recibido. Se generó el ingreso #{id_c}."
                                 st.rerun()
                             except ErrorNegocio as e:
