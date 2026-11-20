@@ -270,6 +270,113 @@ elif menu == "📊 Dashboard de Inventario":
     else:
         st.info("No hay registros de inventario disponibles.")
 
+# --- Atributos de Merma en Inventario ---
+    st.subheader("🗑️ Estado de Mermas en Inventario")
+    sql_mermas_inv = """
+        SELECT
+            I.ID_Inventario,
+            T.Nombre AS Tienda,
+            P.Cod_Producto,
+            P.Nombre AS Producto,
+            I.Fecha_Vencimiento,
+            I.Existencias,
+            I.Cantidad_Merma,
+            I.Motivo_Merma,
+            I.Fecha_Ultima_Merma
+        FROM inventario I
+        JOIN tienda T ON I.ID_Tienda = T.ID_Tienda
+        JOIN producto P ON I.ID_Producto = P.ID_Producto
+        WHERE I.Cantidad_Merma > 0 OR I.Motivo_Merma IS NOT NULL
+    """
+    df_mermas_inv = (
+        run_query(sql_mermas_inv + " ORDER BY I.Fecha_Ultima_Merma DESC;")
+        if rol == 'ADMINISTRADOR'
+        else run_query(sql_mermas_inv + " AND I.ID_Tienda = %s ORDER BY I.Fecha_Ultima_Merma DESC;", (id_tienda,))
+    )
+    if not df_mermas_inv.empty:
+        st.dataframe(df_mermas_inv, use_container_width=True, hide_index=True)
+        boton_exportar(df_mermas_inv, "Mermas_Inventario")
+    else:
+        st.info("Aún no hay mermas registradas en los atributos de inventario.")
+
+    # --- Historial consolidado: COMPRA, VENTA y MERMA (sin crear tablas nuevas) ---
+    st.subheader("🔄 Registro de Movimientos (Compra / Venta / Merma)")
+    sql_movs = """
+        SELECT * FROM (
+            SELECT
+                C.Fecha_Compra AS Fecha,
+                C.ID_Tienda,
+                T.Nombre AS Tienda,
+                P.Cod_Producto,
+                P.Nombre AS Producto,
+                'COMPRA' AS Tipo_Movimiento,
+                DC.Cantidad,
+                COALESCE(DC.Motivo_Merma, '-') AS Motivo_Merma,
+                U.Nombre AS Usuario
+            FROM detalle_compra DC
+            JOIN compra C ON DC.ID_Compra = C.ID_Compra
+            JOIN tienda T ON C.ID_Tienda = T.ID_Tienda
+            JOIN producto P ON DC.ID_Producto = P.ID_Producto
+            JOIN usuario U ON C.ID_Usuario = U.ID_Usuario
+            WHERE C.Estado_Compra = 'REGISTRADA'
+
+            UNION ALL
+
+            SELECT
+                V.Fecha_Venta AS Fecha,
+                V.ID_Tienda,
+                T.Nombre AS Tienda,
+                P.Cod_Producto,
+                P.Nombre AS Producto,
+                'VENTA' AS Tipo_Movimiento,
+                DV.Cantidad,
+                '-' AS Motivo_Merma,
+                U.Nombre AS Usuario
+            FROM detalle_venta DV
+            JOIN venta V ON DV.ID_Venta = V.ID_Venta
+            JOIN inventario I ON DV.ID_Inventario = I.ID_Inventario
+            JOIN tienda T ON V.ID_Tienda = T.ID_Tienda
+            JOIN producto P ON I.ID_Producto = P.ID_Producto
+            JOIN usuario U ON V.ID_Usuario = U.ID_Usuario
+
+            UNION ALL
+
+            SELECT
+                I.Fecha_Ultima_Merma AS Fecha,
+                I.ID_Tienda,
+                T.Nombre AS Tienda,
+                P.Cod_Producto,
+                P.Nombre AS Producto,
+                'MERMA' AS Tipo_Movimiento,
+                I.Cantidad_Merma AS Cantidad,
+                COALESCE(I.Motivo_Merma, 'Sin motivo') AS Motivo_Merma,
+                '-' AS Usuario
+            FROM inventario I
+            JOIN tienda T ON I.ID_Tienda = T.ID_Tienda
+            JOIN producto P ON I.ID_Producto = P.ID_Producto
+            WHERE I.Cantidad_Merma > 0 AND I.Fecha_Ultima_Merma IS NOT NULL
+        ) AS movs
+    """
+    df_movs = (
+        run_query(sql_movs + " ORDER BY Fecha DESC;")
+        if rol == 'ADMINISTRADOR'
+        else run_query(sql_movs + " WHERE ID_Tienda = %s ORDER BY Fecha DESC;", (id_tienda,))
+    )
+
+    if not df_movs.empty:
+        filtro_tipo = st.multiselect(
+            "Filtrar por tipo de movimiento:",
+            options=["COMPRA", "VENTA", "MERMA"],
+            default=["COMPRA", "VENTA", "MERMA"],
+            key="filtro_tipo_mov_dashboard"
+        )
+        if filtro_tipo:
+            df_movs = df_movs[df_movs["Tipo_Movimiento"].isin(filtro_tipo)]
+        st.dataframe(df_movs, use_container_width=True, hide_index=True)
+        boton_exportar(df_movs, "Movimientos_Inventario")
+    else:
+        st.info("No hay movimientos de compra, venta o merma para mostrar.")
+
 elif menu == "🚨 Puntos de Reorden":
     st.title("🚨 Puntos de Reorden y Sugerencia de Compra")
     df_reorden = (
