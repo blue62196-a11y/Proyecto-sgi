@@ -116,8 +116,14 @@ def registrar_proveedor(conn, id_tienda, nombre, dui_nit, telefono, correo, dire
 
 def _info_tabla_traslado(cur):
     """Detecta nombres exactos de columnas y valores ENUM en la tabla traslado."""
-    cur.execute("SHOW COLUMNS FROM traslado")
-    cols_info = {row["Field"].upper(): row for row in cur.fetchall()}
+    cur.execute("""
+        SELECT COLUMN_NAME AS Field, COLUMN_TYPE AS Type
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND LOWER(TABLE_NAME) = 'traslado'
+    """)
+    rows = cur.fetchall()
+    cols_info = {row["Field"].upper(): row for row in rows}
 
     col_estado_row = cols_info.get("ESTADO_TRASLADO") or cols_info.get("ESTADO")
     col_estado = col_estado_row["Field"] if col_estado_row else "Estado"
@@ -358,6 +364,8 @@ def pantalla_registrar_compra(get_connection):
                     WHERE T.ID_Tienda_Destino = %s AND T.{col_estado} = %s
                 """, (id_tienda, val_transito))
                 pendientes = cur_c.fetchall()
+            except Exception as e:
+                st.error(f"Error consultando traslados: {e}")
             finally:
                 conn_check.close()
 
