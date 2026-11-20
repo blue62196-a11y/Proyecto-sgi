@@ -16,72 +16,20 @@ def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
     try:
         conn.start_transaction()
 
-        # 1. Registrar PRIMERO la venta interna para obtener el ID_Venta
+        # 1. Registrar la venta interna marcando el estado en Cliente_Nombre
+        etiqueta_envio = f"ENVIO_PENDIENTE_TIENDA_{id_tienda_destino}"
         cur.execute(
             "INSERT INTO venta (ID_Tienda, ID_Usuario, Cliente_Nombre) VALUES (%s, %s, %s)",
-            (id_cd, id_usuario, f"Traslado a Tienda #{id_tienda_destino}")
+            (id_cd, id_usuario, etiqueta_envio)
         )
         id_venta = cur.lastrowid
 
-        # 2. Crear el traslado pasándole ID_Venta y adaptándose a las columnas/ENUM reales
-        cur.execute("SHOW COLUMNS FROM traslado")
-        cols_info = {row["Field"].upper(): row for row in cur.fetchall()}
-
-        campos = []
-        valores = []
-        placeholders = []
-
-        if "ID_VENTA" in cols_info:
-            campos.append(cols_info["ID_VENTA"]["Field"])
-            valores.append(id_venta)
-            placeholders.append("%s")
-        if "ID_TIENDA_ORIGEN" in cols_info:
-            campos.append(cols_info["ID_TIENDA_ORIGEN"]["Field"])
-            valores.append(id_cd)
-            placeholders.append("%s")
-        if "ID_TIENDA_DESTINO" in cols_info:
-            campos.append(cols_info["ID_TIENDA_DESTINO"]["Field"])
-            valores.append(id_tienda_destino)
-            placeholders.append("%s")
-        if "ID_USUARIO_ENVIA" in cols_info:
-            campos.append(cols_info["ID_USUARIO_ENVIA"]["Field"])
-            valores.append(id_usuario)
-            placeholders.append("%s")
-        elif "ID_USUARIO" in cols_info:
-            campos.append(cols_info["ID_USUARIO"]["Field"])
-            valores.append(id_usuario)
-            placeholders.append("%s")
-        if "FECHA_TRASLADO" in cols_info:
-            campos.append(cols_info["FECHA_TRASLADO"]["Field"])
-            placeholders.append("CURDATE()")
-        elif "FECHA_ENVIO" in cols_info:
-            campos.append(cols_info["FECHA_ENVIO"]["Field"])
-            placeholders.append("CURDATE()")
-
-        col_estado = cols_info.get("ESTADO_TRASLADO") or cols_info.get("ESTADO")
-        if col_estado:
-            tipo = str(col_estado["Type"])
-            estado_val = "EN TRANSITO"
-            if tipo.lower().startswith("enum("):
-                opciones_enum = [v.strip().strip("'\"") for v in tipo[5:-1].split(",")]
-                estado_val = next(
-                    (o for o in opciones_enum if "TRANSIT" in o.upper() or "PEND" in o.upper()),
-                    opciones_enum[0]
-                )
-            campos.append(col_estado["Field"])
-            valores.append(estado_val)
-            placeholders.append("%s")
-
-        sql_traslado = f"INSERT INTO traslado ({', '.join(campos)}) VALUES ({', '.join(placeholders)})"
-        cur.execute(sql_traslado, tuple(valores))
-        id_traslado = cur.lastrowid
-
+        # 2. Descontar lotes en orden FEFO y registrar en detalle_venta
         for l in lineas:
             cantidad = _dec(l["cantidad"])
             costo = _dec(l["costo"])
             id_prod = l["id_producto"]
 
-            # Traer lotes disponibles ordenados por fecha de vencimiento (FEFO)
             cur.execute(
                 "SELECT ID_Inventario, Existencias FROM inventario "
                 "WHERE ID_Tienda = %s AND ID_Producto = %s AND Existencias > 0 "
@@ -94,7 +42,6 @@ def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
             if disp_total < cantidad:
                 raise ErrorNegocio(f"Stock insuficiente para {l['nombre']}. Hay {disp_total}.")
 
-            # Descontar lote por lote y registrar en detalle_venta con ID_Inventario y Precio_Venta
             restante = cantidad
             for lote in lotes:
                 if restante <= 0:
@@ -114,7 +61,7 @@ def registrar_venta_interna(conn, id_cd, id_tienda_destino, id_usuario, lineas):
                 restante -= tomar
 
         conn.commit()
-        return id_traslado, id_venta
+        return id_venta
     except Exception:
         conn.rollback()
         raise
@@ -134,7 +81,7 @@ def _consultar(get_connection, sql, params=()):
 
 def pantalla_venta_interna(get_connection):
     st.title("🚚 Despacho a Tiendas (Venta Interna)")
-    st.markdown("Registra la salida del inventario al costo y lo envía en estado 'En Tránsito'.")
+    st.markdown("Registra la salida del inventario al costo y lo envía pendiente de recepción a la tienda destino.")
 
     id_tienda = st.session_state.id_tienda
 
@@ -198,8 +145,8 @@ def pantalla_venta_interna(get_connection):
             conn = get_connection()
             if conn:
                 try:
-                    id_t, id_v = registrar_venta_interna(conn, id_tienda, id_destino, st.session_state.id_usuario, carrito)
-                    st.success(f"Despacho exitoso. Traslado #{id_t} en tránsito (Venta interna #{id_v}).")
+                    id_v = registrar_venta_interna(conn, id_tienda, id_destino, st.session_state.id_usuario, carrito)
+                    st.success(f"Despacho exitoso. Envío #{id_v} pendiente de recepción en la tienda destino.")
                     st.session_state.carrito_vi = []
                 except ErrorNegocio as e:
                     st.error(str(e))
