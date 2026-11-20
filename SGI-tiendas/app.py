@@ -383,20 +383,6 @@ elif menu == "📊 Dashboard de Inventario":
         else run_query(sql_movs + " WHERE ID_Tienda = %s ORDER BY Fecha DESC;", (id_tienda,))
     )
 
-    if not df_movs.empty:
-        filtro_tipo = st.multiselect(
-            "Filtrar por tipo de movimiento:",
-            options=["COMPRA", "VENTA", "MERMA"],
-            default=["COMPRA", "VENTA", "MERMA"],
-            key="filtro_tipo_mov_dashboard"
-        )
-        if filtro_tipo:
-            df_movs = df_movs[df_movs["Tipo_Movimiento"].isin(filtro_tipo)]
-        st.dataframe(df_movs, use_container_width=True, hide_index=True)
-        boton_exportar(df_movs, "Movimientos_Inventario")
-    else:
-        st.info("No hay movimientos de compra, venta o merma para mostrar.")
-
 elif menu == "🚨 Puntos de Reorden":
     st.title("🚨 Puntos de Reorden y Sugerencia de Compra")
     df_reorden = (
