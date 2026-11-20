@@ -376,7 +376,7 @@ elif menu == "📊 Dashboard de Inventario":
         boton_exportar(df_movs, "Movimientos_Inventario")
     else:
         st.info("No hay movimientos de compra, venta o merma para mostrar.")
-```[cite: 1, 8]
+
     df_movs = (
         run_query(sql_movs + " ORDER BY Fecha DESC;")
         if rol == 'ADMINISTRADOR'
