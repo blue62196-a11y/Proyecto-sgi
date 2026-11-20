@@ -311,7 +311,7 @@ elif menu == "📊 Dashboard de Inventario":
                 P.Nombre AS Producto,
                 'COMPRA' AS Tipo_Movimiento,
                 DC.Cantidad,
-                COALESCE(DC.Motivo_Merma, '-') AS Motivo_Merma,
+                '-' AS Motivo_Merma,
                 U.Nombre AS Usuario
             FROM detalle_compra DC
             JOIN compra C ON DC.ID_Compra = C.ID_Compra
@@ -357,6 +357,26 @@ elif menu == "📊 Dashboard de Inventario":
             WHERE I.Cantidad_Merma > 0 AND I.Fecha_Ultima_Merma IS NOT NULL
         ) AS movs
     """
+    df_movs = (
+        run_query(sql_movs + " ORDER BY Fecha DESC;")
+        if rol == 'ADMINISTRADOR'
+        else run_query(sql_movs + " WHERE ID_Tienda = %s ORDER BY Fecha DESC;", (id_tienda,))
+    )
+
+    if not df_movs.empty:
+        filtro_tipo = st.multiselect(
+            "Filtrar por tipo de movimiento:",
+            options=["COMPRA", "VENTA", "MERMA"],
+            default=["COMPRA", "VENTA", "MERMA"],
+            key="filtro_tipo_mov_dashboard"
+        )
+        if filtro_tipo:
+            df_movs = df_movs[df_movs["Tipo_Movimiento"].isin(filtro_tipo)]
+        st.dataframe(df_movs, use_container_width=True, hide_index=True)
+        boton_exportar(df_movs, "Movimientos_Inventario")
+    else:
+        st.info("No hay movimientos de compra, venta o merma para mostrar.")
+```[cite: 1, 8]
     df_movs = (
         run_query(sql_movs + " ORDER BY Fecha DESC;")
         if rol == 'ADMINISTRADOR'
