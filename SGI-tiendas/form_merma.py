@@ -1,5 +1,6 @@
 import streamlit as st
 
+
 def _consultar(get_connection, sql, params=()):
     conn = get_connection()
     if conn:
@@ -10,6 +11,7 @@ def _consultar(get_connection, sql, params=()):
         finally:
             conn.close()
     return []
+
 
 def registrar_merma(conn, id_tienda, id_producto, cantidad, motivo, id_usuario):
     cur = conn.cursor()
@@ -37,6 +39,7 @@ def registrar_merma(conn, id_tienda, id_producto, cantidad, motivo, id_usuario):
     finally:
         cur.close()
 
+
 def pantalla_registrar_merma(get_connection):
     st.title("🗑️ Ajustes y Mermas de Inventario")
     st.markdown("Registro de salidas por daños, vencimientos o discrepancias de auditoría.")
@@ -62,14 +65,17 @@ def pantalla_registrar_merma(get_connection):
 
     por_id = {p["ID_Producto"]: p for p in productos}
 
-    with st.form("form_merma"):
-        id_sel = st.selectbox(
-            "Seleccionar Producto Dañado/Perdido",
-            options=list(por_id.keys()),
-            format_func=lambda i: f"{por_id[i]['Cod_Producto']} - {por_id[i]['Nombre']} (Disp: {por_id[i]['Existencias']})",
-            key="merma_producto",
-        )
+    # Selector fuera del form: la etiqueta no incluye el stock, así que nunca queda desactualizada
+    id_sel = st.selectbox(
+        "Seleccionar Producto Dañado/Perdido",
+        options=list(por_id.keys()),
+        format_func=lambda i: f"{por_id[i]['Cod_Producto']} - {por_id[i]['Nombre']}",
+        key="merma_producto",
+    )
+    prod = por_id[id_sel]
+    st.caption(f"Existencias disponibles: {prod['Existencias']}")
 
+    with st.form("form_merma"):
         col1, col2 = st.columns(2)
         cantidad = col1.number_input(
             "Cantidad a dar de baja", min_value=1, step=1, value=1, key="merma_cantidad"
@@ -79,11 +85,9 @@ def pantalla_registrar_merma(get_connection):
             ["Producto Defectuoso", "Vencimiento", "Daño en Almacén", "Extravío / Discrepancia"],
             key="merma_motivo",
         )
-
         enviado = st.form_submit_button("Confirmar Merma", type="primary")
 
     if enviado:
-        prod = por_id[id_sel]
         if cantidad > int(prod["Existencias"]):
             st.error(f"La cantidad supera las existencias disponibles ({prod['Existencias']}).")
             return
@@ -98,7 +102,7 @@ def pantalla_registrar_merma(get_connection):
                 st.error(f"Error al procesar el ajuste: {e}")
             else:
                 conn.close()
-                st.rerun()  # recarga para que el "Disp:" se actualice
+                st.rerun()
             finally:
                 try:
                     conn.close()
