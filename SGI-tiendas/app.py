@@ -160,6 +160,34 @@ if not st.session_state.logged_in:
 def cambiar_pantalla(nueva_pantalla):
     st.session_state.vista_actual = nueva_pantalla
 
+
+def ocultar_plan_reposicion():
+    """Callback para quitar manualmente la tabla del plan de reposición."""
+    st.session_state.pop("plan_reposicion", None)
+
+
+def mostrar_plan_reposicion():
+    """Muestra el plan de reposición (productos sin stock / bajo punto de reorden)
+    guardado desde la pantalla de Puntos de Reorden, para tenerlo de referencia
+    mientras se registra la compra."""
+    plan = st.session_state.get("plan_reposicion")
+    if plan is None or plan.empty:
+        return
+
+    with st.expander(f"📋 Productos por reponer ({len(plan)})", expanded=True):
+        st.caption(
+            f"Plan generado en Puntos de Reorden · cobertura de "
+            f"{st.session_state.get('plan_dias_cobertura', 15)} días."
+        )
+        st.dataframe(plan, use_container_width=True, hide_index=True)
+        st.button(
+            "🙈 Ocultar esta tabla",
+            key="btn_ocultar_plan",
+            on_click=ocultar_plan_reposicion
+        )
+    st.divider()
+
+
 def crear_tarjeta(icono, titulo, descripcion, texto_boton, vista_destino):
     with st.container(border=True):
         st.markdown(f"<h1 style='text-align: center; margin-bottom: 0px;'>{icono}</h1>", unsafe_allow_html=True)
@@ -455,6 +483,8 @@ elif menu == "🚨 Puntos de Reorden":
             st.warning(f"¡Atención! Hay {len(df_reorden)} producto(s) por debajo de su punto de reorden.")
         with col_btn:
             if rol != 'ADMINISTRADOR':
+                # El plan ya queda guardado en session_state en cada ejecución (ver más abajo),
+                # así que al navegar a Ingresos la tabla sigue disponible.
                 st.button(
                     "🛒 Reponer Stock",
                     type="primary",
@@ -472,9 +502,11 @@ elif menu == "🚨 Puntos de Reorden":
                 )
 
         # Parámetro configurable para el cálculo de "Cuánto comprar"
+        # (key para que el valor se conserve al cambiar de pantalla)
         dias_cobertura = st.slider(
             "📅 Horizonte de cobertura deseado (días de inventario a cubrir con la compra):",
-            min_value=7, max_value=60, value=15, step=1
+            min_value=7, max_value=60, value=15, step=1,
+            key="slider_dias_cobertura"
         )
 
         # Consultar demanda diaria promedio (últimos 30 días) usando ID_Inventario
@@ -539,6 +571,10 @@ elif menu == "🚨 Puntos de Reorden":
             df_plan['Cuándo Comprar'] = df_plan.apply(calcular_cuando, axis=1)
             df_plan['Cantidad Sugerida'] = df_plan.apply(calcular_cuanto, axis=1)
 
+        # >>> Guardamos el plan para mostrarlo también en "Gestión de Ingresos"
+        st.session_state["plan_reposicion"] = df_plan.copy()
+        st.session_state["plan_dias_cobertura"] = dias_cobertura
+
         st.subheader("📋 Plan de Reposición Sugerido")
         st.dataframe(df_plan, use_container_width=True, hide_index=True)
 
@@ -556,6 +592,8 @@ elif menu == "🚨 Puntos de Reorden":
                 mime="text/plain"
             )
     else:
+        # Ya no hay nada por reponer: limpiamos el plan guardado
+        st.session_state.pop("plan_reposicion", None)
         st.success("Todos los productos están por encima de su punto de reorden. ¡Excelente!")
 
 elif menu == "💰 Análisis de Ventas":
@@ -646,6 +684,8 @@ elif menu == "📦 Análisis de Compras":
 
 # --- ENRUTAMIENTO DE MÓDULOS ---
 elif menu == "📥 Gestión de Ingresos":
+    # Tabla del plan de reposición (si el usuario viene de Puntos de Reorden)
+    mostrar_plan_reposicion()
     pantalla_registrar_compra(get_connection)
 elif menu == "🧾 Venta a Cliente Externo":
     pantalla_registrar_venta(get_connection)
