@@ -1,5 +1,7 @@
+import time
 import streamlit as st
 import mysql.connector
+from mysql.connector import pooling, errors
 import pandas as pd
 import hashlib
 import datetime
@@ -17,32 +19,75 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- 1. CONFIGURACIÓN DE CONEXIÓN A LA BASE DE DATOS ---
+# --- 1. CONFIGURACIÓN DE CONEXIÓN A LA BASE DE DATOS (CON POOL) ---
+@st.cache_resource
+def _get_pool():
+    """Pool compartido por toda la app. Máximo 3 conexiones abiertas
+    (menor que el límite max_user_connections = 5 del servidor)."""
+    return pooling.MySQLConnectionPool(
+        pool_name="sgi_pool",
+        pool_size=3,
+        pool_reset_session=True,
+        host=st.secrets.get("DB_HOST", "localhost"),
+        user=st.secrets.get("DB_USER", "root"),
+        password=st.secrets.get("DB_PASSWORD", ""),
+        database=st.secrets.get("DB_NAME", "sgi_tiendas"),
+        port=int(st.secrets.get("DB_PORT", 3306)),
+    )
+
+
 def get_connection():
+    """Devuelve una conexión del pool. conn.close() la DEVUELVE al pool
+    (no la cierra), por eso los demás módulos no necesitan cambios."""
+    for _ in range(10):
+        try:
+            conn = _get_pool().get_connection()
+            try:
+                conn.ping(reconnect=True, attempts=2, delay=1)
+            except Exception:
+                pass
+            return conn
+        except errors.PoolError:
+            # Pool ocupado: esperar un momento y reintentar
+            time.sleep(0.3)
+        except Exception as e:
+            st.error(f"Error al conectar con la base de datos: {e}")
+            return None
+    st.error("El sistema está ocupado, intenta de nuevo en unos segundos.")
+    return None
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _run_query_cached(query, params=None):
+    """Consulta con caché de 30 s. Si falla lanza excepción (los errores no se cachean)."""
+    conn = _get_pool_connection_or_raise()
     try:
-        return mysql.connector.connect(
-            host=st.secrets.get("DB_HOST", "localhost"),
-            user=st.secrets.get("DB_USER", "root"),
-            password=st.secrets.get("DB_PASSWORD", ""),
-            database=st.secrets.get("DB_NAME", "sgi_tiendas"),
-            port=int(st.secrets.get("DB_PORT", 3306))
-        )
-    except Exception as e:
-        st.error(f"Error al conectar con la base de datos: {e}")
-        return None
+        return pd.read_sql(query, conn, params=params)
+    finally:
+        conn.close()
+
+
+def _get_pool_connection_or_raise():
+    for _ in range(10):
+        try:
+            conn = _get_pool().get_connection()
+            try:
+                conn.ping(reconnect=True, attempts=2, delay=1)
+            except Exception:
+                pass
+            return conn
+        except errors.PoolError:
+            time.sleep(0.3)
+    raise RuntimeError("El sistema está ocupado, intenta de nuevo en unos segundos.")
+
 
 def run_query(query, params=None):
-    conn = get_connection()
-    if conn:
-        try:
-            df = pd.read_sql(query, conn, params=params)
-            return df
-        except Exception as e:
-            st.error(f"Ocurrió un error en la consulta: {e}")
-            return pd.DataFrame()
-        finally:
-            conn.close()
-    return pd.DataFrame()
+    try:
+        return _run_query_cached(query, params)
+    except Exception as e:
+        st.error(f"Ocurrió un error en la consulta: {e}")
+        return pd.DataFrame()
+
 
 def boton_exportar(df, nombre_archivo):
     csv = df.to_csv(index=False).encode('utf-8')
@@ -84,15 +129,21 @@ if not st.session_state.logged_in:
                 if submit:
                     hashed_input = hashlib.sha256(password.encode()).hexdigest()
                     conn = get_connection()
+                    user = None
                     if conn:
-                        cursor = conn.cursor(dictionary=True)
-                        cursor.execute(
-                            "SELECT U.ID_Usuario, U.Nombre, U.ID_Tienda, R.Nombre as Rol, U.Password_Hash "
-                            "FROM usuario U JOIN rol R ON U.ID_Rol = R.ID_Rol WHERE U.Correo = %s",
-                            (correo,)
-                        )
-                        user = cursor.fetchone()
-                        conn.close()
+                        try:
+                            cursor = conn.cursor(dictionary=True)
+                            cursor.execute(
+                                "SELECT U.ID_Usuario, U.Nombre, U.ID_Tienda, R.Nombre as Rol, U.Password_Hash "
+                                "FROM usuario U JOIN rol R ON U.ID_Rol = R.ID_Rol WHERE U.Correo = %s",
+                                (correo,)
+                            )
+                            user = cursor.fetchone()
+                            cursor.close()
+                        except Exception as e:
+                            st.error(f"Error al validar el usuario: {e}")
+                        finally:
+                            conn.close()
 
                         if user and user["Password_Hash"] == hashed_input:
                             st.session_state.logged_in = True
@@ -101,7 +152,7 @@ if not st.session_state.logged_in:
                             st.session_state.id_tienda = user["ID_Tienda"]
                             st.session_state.id_usuario = user["ID_Usuario"]
                             st.rerun()
-                        else:
+                        elif user is not None or conn:
                             st.error("Correo o contraseña incorrectos.")
     st.stop()
 
@@ -270,7 +321,7 @@ elif menu == "📊 Dashboard de Inventario":
     else:
         st.info("No hay registros de inventario disponibles.")
 
-# --- Atributos de Merma en Inventario ---
+    # --- Atributos de Merma en Inventario ---
     st.subheader("🗑️ Estado de Mermas en Inventario")
     sql_mermas_inv = """
         SELECT
@@ -291,7 +342,10 @@ elif menu == "📊 Dashboard de Inventario":
     df_mermas_inv = (
         run_query(sql_mermas_inv + " ORDER BY I.Fecha_Ultima_Merma DESC;")
         if rol == 'ADMINISTRADOR'
-        else run_query(sql_mermas_inv + " AND I.ID_Tienda = %s ORDER BY I.Fecha_Ultima_Merma DESC;", (id_tienda,))
+        else run_query(sql_mermas_inv.replace(
+            "WHERE I.Cantidad_Merma > 0 OR I.Motivo_Merma IS NOT NULL",
+            "WHERE (I.Cantidad_Merma > 0 OR I.Motivo_Merma IS NOT NULL) AND I.ID_Tienda = %s"
+        ) + " ORDER BY I.Fecha_Ultima_Merma DESC;", (id_tienda,))
     )
     if not df_mermas_inv.empty:
         st.dataframe(df_mermas_inv, use_container_width=True, hide_index=True)
@@ -376,12 +430,6 @@ elif menu == "📊 Dashboard de Inventario":
         boton_exportar(df_movs, "Movimientos_Inventario")
     else:
         st.info("No hay movimientos de compra, venta o merma para mostrar.")
-
-    df_movs = (
-        run_query(sql_movs + " ORDER BY Fecha DESC;")
-        if rol == 'ADMINISTRADOR'
-        else run_query(sql_movs + " WHERE ID_Tienda = %s ORDER BY Fecha DESC;", (id_tienda,))
-    )
 
 elif menu == "🚨 Puntos de Reorden":
     st.title("🚨 Puntos de Reorden y Sugerencia de Compra")
