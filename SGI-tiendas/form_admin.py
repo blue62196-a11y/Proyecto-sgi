@@ -357,8 +357,7 @@ def _tab_costos(get_connection):
     st.subheader("Último costo por producto y proveedor")
     st.caption(
         "Se actualiza automáticamente cada vez que se registra una compra externa "
-        "(relación muchos a muchos entre producto y proveedor). "
-        "Se muestran primero los costos más recientes."
+        "(relación muchos a muchos entre producto y proveedor)."
     )
     filas = _consultar(
         get_connection,
@@ -370,7 +369,7 @@ def _tab_costos(get_connection):
         JOIN proveedor PR ON PR.ID_Proveedor = PP.ID_Proveedor
         JOIN tienda T ON T.ID_Tienda = PR.ID_Tienda
         WHERE PP.Estado = 'ACTIVO'
-        ORDER BY PP.Fecha_Ultimo_Costo DESC, P.Nombre, PP.Ultimo_Costo
+        ORDER BY P.Nombre, PP.Ultimo_Costo
         """,
     )
     if filas:
