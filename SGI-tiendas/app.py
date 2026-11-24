@@ -104,6 +104,7 @@ if "logged_in" not in st.session_state:
     st.session_state.user_name = ""
     st.session_state.user_role = ""
     st.session_state.id_tienda = None
+    st.session_state.nombre_tienda = ""
     st.session_state.id_usuario = None
 
 if "vista_actual" not in st.session_state:
@@ -134,8 +135,12 @@ if not st.session_state.logged_in:
                         try:
                             cursor = conn.cursor(dictionary=True)
                             cursor.execute(
-                                "SELECT U.ID_Usuario, U.Nombre, U.ID_Tienda, R.Nombre as Rol, U.Password_Hash "
-                                "FROM usuario U JOIN rol R ON U.ID_Rol = R.ID_Rol WHERE U.Correo = %s",
+                                "SELECT U.ID_Usuario, U.Nombre, U.ID_Tienda, "
+                                "T.Nombre AS Nombre_Tienda, R.Nombre AS Rol, U.Password_Hash "
+                                "FROM usuario U "
+                                "JOIN rol R ON U.ID_Rol = R.ID_Rol "
+                                "LEFT JOIN tienda T ON U.ID_Tienda = T.ID_Tienda "
+                                "WHERE U.Correo = %s",
                                 (correo,)
                             )
                             user = cursor.fetchone()
@@ -150,6 +155,7 @@ if not st.session_state.logged_in:
                             st.session_state.user_name = user["Nombre"]
                             st.session_state.user_role = user["Rol"]
                             st.session_state.id_tienda = user["ID_Tienda"]
+                            st.session_state.nombre_tienda = user["Nombre_Tienda"] or ""
                             st.session_state.id_usuario = user["ID_Usuario"]
                             st.rerun()
                         elif user is not None or conn:
@@ -209,6 +215,14 @@ id_tienda = st.session_state.id_tienda
 hoy = datetime.date.today()
 hace_un_mes = hoy - datetime.timedelta(days=30)
 
+# Respaldo para obtener el nombre real de la sucursal si la sesión ya estaba activa
+if rol != 'ADMINISTRADOR' and not st.session_state.get("nombre_tienda") and id_tienda is not None:
+    df_t = run_query("SELECT Nombre FROM tienda WHERE ID_Tienda = %s;", (id_tienda,))
+    if not df_t.empty:
+        st.session_state.nombre_tienda = str(df_t.iloc[0]["Nombre"])
+
+nombre_tienda = st.session_state.get("nombre_tienda") or (f"Sucursal {id_tienda}" if id_tienda else "Red completa")
+
 opciones = [
     "🏠 Menú Principal",
     "📊 Dashboard de Inventario",
@@ -227,10 +241,13 @@ if rol != 'ADMINISTRADOR':
 else:
     opciones.append("⚙️ Panel de Administración")
 
-# Cabecera discreta con usuario y botón de salir
+# Cabecera discreta con usuario, sucursal y botón de salir
 col_user, col_salir = st.columns([6, 1])
 with col_user:
-    st.caption(f"👤 **{st.session_state.user_name}** · Rol: {st.session_state.user_role}")
+    if rol == 'ADMINISTRADOR':
+        st.caption(f"👤 **{st.session_state.user_name}** · Rol: {st.session_state.user_role} · 🌐 Red completa")
+    else:
+        st.caption(f"👤 **{st.session_state.user_name}** · Rol: {st.session_state.user_role} · 🏪 **{nombre_tienda}**")
 with col_salir:
     if st.button("🚪 Salir", use_container_width=True):
         st.session_state.clear()
@@ -312,7 +329,7 @@ elif menu == "📊 Dashboard de Inventario":
             ORDER BY I.Fecha_Vencimiento ASC;
         """)
     else:
-        st.markdown(f"Vista local: Existencias de la Tienda {id_tienda}.")
+        st.markdown(f"Vista local: Existencias de **{nombre_tienda}**.")
         df_inventario = run_query("SELECT * FROM v_inventario_actual WHERE ID_Tienda = %s;", (id_tienda,))
         df_vencer = run_query("""
             SELECT P.Cod_Producto, P.Nombre AS Producto,
@@ -461,6 +478,11 @@ elif menu == "📊 Dashboard de Inventario":
 
 elif menu == "🚨 Puntos de Reorden":
     st.title("🚨 Puntos de Reorden y Sugerencia de Compra")
+    st.markdown(
+        "Vista global: Toda la red."
+        if rol == 'ADMINISTRADOR'
+        else f"Vista local: **{nombre_tienda}**."
+    )
     df_reorden = (
         run_query("SELECT * FROM v_punto_reorden;")
         if rol == 'ADMINISTRADOR'
@@ -483,8 +505,6 @@ elif menu == "🚨 Puntos de Reorden":
             st.warning(f"¡Atención! Hay {len(df_reorden)} producto(s) por debajo de su punto de reorden.")
         with col_btn:
             if rol != 'ADMINISTRADOR':
-                # El plan ya queda guardado en session_state en cada ejecución (ver más abajo),
-                # así que al navegar a Ingresos la tabla sigue disponible.
                 st.button(
                     "🛒 Reponer Stock",
                     type="primary",
@@ -502,7 +522,6 @@ elif menu == "🚨 Puntos de Reorden":
                 )
 
         # Parámetro configurable para el cálculo de "Cuánto comprar"
-        # (key para que el valor se conserve al cambiar de pantalla)
         dias_cobertura = st.slider(
             "📅 Horizonte de cobertura deseado (días de inventario a cubrir con la compra):",
             min_value=7, max_value=60, value=15, step=1,
@@ -571,7 +590,7 @@ elif menu == "🚨 Puntos de Reorden":
             df_plan['Cuándo Comprar'] = df_plan.apply(calcular_cuando, axis=1)
             df_plan['Cantidad Sugerida'] = df_plan.apply(calcular_cuanto, axis=1)
 
-        # >>> Guardamos el plan para mostrarlo también en "Gestión de Ingresos"
+        # Guardamos el plan para mostrarlo también en "Gestión de Ingresos"
         st.session_state["plan_reposicion"] = df_plan.copy()
         st.session_state["plan_dias_cobertura"] = dias_cobertura
 
@@ -583,6 +602,7 @@ elif menu == "🚨 Puntos de Reorden":
             boton_exportar(df_plan, "Sugerencia_Compra")
         with c_ped:
             pedido_txt = f"PEDIDO DE COMPRA SUGERIDO - FECHA: {hoy}\n"
+            pedido_txt += f"Sucursal: {nombre_tienda if rol != 'ADMINISTRADOR' else 'Red completa'}\n"
             pedido_txt += f"Cobertura proyectada: {dias_cobertura} días\n" + "=" * 55 + "\n"
             pedido_txt += df_plan.to_string(index=False)
             st.download_button(
@@ -592,12 +612,16 @@ elif menu == "🚨 Puntos de Reorden":
                 mime="text/plain"
             )
     else:
-        # Ya no hay nada por reponer: limpiamos el plan guardado
         st.session_state.pop("plan_reposicion", None)
         st.success("Todos los productos están por encima de su punto de reorden. ¡Excelente!")
 
 elif menu == "💰 Análisis de Ventas":
     st.title("💰 Análisis de Ventas")
+    st.markdown(
+        "Vista global: Toda la red."
+        if rol == 'ADMINISTRADOR'
+        else f"Vista local: **{nombre_tienda}**."
+    )
     df_ventas = run_query("SELECT * FROM v_venta_total ORDER BY Fecha_Venta DESC;") if rol == 'ADMINISTRADOR' else run_query("SELECT * FROM v_venta_total WHERE ID_Tienda = %s ORDER BY Fecha_Venta DESC;", (id_tienda,))
     if not df_ventas.empty:
         col_fecha = next((col for col in df_ventas.columns if 'FECHA' in col.upper()), None)
@@ -630,6 +654,11 @@ elif menu == "💰 Análisis de Ventas":
 
 elif menu == "📦 Análisis de Compras":
     st.title("📦 Análisis de Compras")
+    st.markdown(
+        "Vista global: Toda la red."
+        if rol == 'ADMINISTRADOR'
+        else f"Vista local: **{nombre_tienda}**."
+    )
     df_compras = run_query("SELECT * FROM v_compra_total ORDER BY Fecha_Compra DESC;") if rol == 'ADMINISTRADOR' else run_query("SELECT * FROM v_compra_total WHERE ID_Tienda = %s ORDER BY Fecha_Compra DESC;", (id_tienda,))
     if not df_compras.empty:
         col_fecha = next((col for col in df_compras.columns if 'FECHA' in col.upper()), None)
