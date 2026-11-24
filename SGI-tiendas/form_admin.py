@@ -3,37 +3,46 @@ import pandas as pd
 import hashlib
 
 
+UNIDADES_MEDIDA = ["Unidad", "Frasco", "Caja", "Galon", "Paquete", "Libra", "Kilogramo"]
+
+
 def _consultar(get_connection, sql, params=()):
     conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor(dictionary=True)
-            cur.execute(sql, params)
-            return cur.fetchall()
-        finally:
-            conn.close()
-    return []
+    if not conn:
+        return []
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(sql, params)
+        return cur.fetchall()
+    except Exception as e:
+        st.error(f"Error al consultar la base de datos: {e}")
+        return []
+    finally:
+        conn.close()
 
 
 def _ejecutar(get_connection, sql, params=()):
     conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute(sql, params)
-            conn.commit()
-            return True
-        except Exception as e:
-            st.error(f"Error en la base de datos: {e}")
-            return False
-        finally:
-            conn.close()
-    return False
+    if not conn:
+        return False
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"Error en la base de datos: {e}")
+        return False
+    finally:
+        conn.close()
 
 
 def _tab_productos(get_connection):
     st.subheader("Catálogo de Productos")
-    categorias = _consultar(get_connection, "SELECT ID_Categoria, Nombre FROM categoria ORDER BY Nombre")
+    categorias = _consultar(
+        get_connection,
+        "SELECT ID_Categoria, Nombre FROM categoria ORDER BY Nombre",
+    )
     cat_opts = {c["Nombre"]: c["ID_Categoria"] for c in categorias}
 
     productos = _consultar(
@@ -47,7 +56,7 @@ def _tab_productos(get_connection):
         """,
     )
     if productos:
-        st.dataframe(pd.DataFrame(productos), use_container_width=True)
+        st.dataframe(pd.DataFrame(productos), use_container_width=True, hide_index=True)
 
     c_crear, c_editar = st.columns(2)
     with c_crear:
@@ -60,18 +69,25 @@ def _tab_productos(get_connection):
                 cod = c1.text_input("Código de Producto (Ej: PROD-001)")
                 nom = c2.text_input("Nombre del Producto")
                 c3, c4 = st.columns(2)
-                uni = c3.selectbox("Unidad de Medida", ["Unidad", "Frasco", "Caja", "Galon", "Paquete", "Libra", "Kilogramo"])
+                uni = c3.selectbox("Unidad de Medida", UNIDADES_MEDIDA)
                 sel_cat = c4.selectbox("Categoría", list(cat_opts.keys()))
                 desc = st.text_input("Descripción (opcional)")
 
                 if st.form_submit_button("Guardar Producto"):
-                    if cod and nom:
+                    if cod.strip() and nom.strip():
                         sql = """
                             INSERT INTO producto (Cod_Producto, Nombre, Descripcion, Unidad_Medida, Estado_Producto, ID_Categoria)
                             VALUES (%s, %s, %s, %s, 'ACTIVO', %s)
                         """
-                        if _ejecutar(get_connection, sql, (cod.strip(), nom.strip(), desc.strip() or None, uni, cat_opts[sel_cat])):
-                            st.success(f"Producto '{nom}' agregado al catálogo global.")
+                        params = (
+                            cod.strip(),
+                            nom.strip(),
+                            desc.strip() or None,
+                            uni,
+                            cat_opts[sel_cat],
+                        )
+                        if _ejecutar(get_connection, sql, params):
+                            st.success(f"Producto '{nom.strip()}' agregado al catálogo global.")
                             st.rerun()
                     else:
                         st.warning("El código y nombre son obligatorios.")
@@ -86,23 +102,34 @@ def _tab_productos(get_connection):
             with st.form("form_prod_editar"):
                 nom_e = st.text_input("Nombre", value=p_actual["Nombre"])
                 desc_e = st.text_input("Descripción", value=p_actual["Descripcion"] or "")
-                unidades = ["Unidad", "Frasco", "Caja", "Galon", "Paquete", "Libra", "Kilogramo"]
-                idx_u = unidades.index(p_actual["Unidad_Medida"]) if p_actual["Unidad_Medida"] in unidades else 0
+                idx_u = UNIDADES_MEDIDA.index(p_actual["Unidad_Medida"]) if p_actual["Unidad_Medida"] in UNIDADES_MEDIDA else 0
                 c1, c2 = st.columns(2)
-                uni_e = c1.selectbox("Unidad de Medida", unidades, index=idx_u)
+                uni_e = c1.selectbox("Unidad de Medida", UNIDADES_MEDIDA, index=idx_u)
                 cat_names = list(cat_opts.keys())
                 idx_c = cat_names.index(p_actual["Categoria"]) if p_actual["Categoria"] in cat_names else 0
                 cat_e = c2.selectbox("Categoría", cat_names, index=idx_c)
-                estado_e = st.selectbox("Estado", ["ACTIVO", "INACTIVO"], index=0 if p_actual["Estado_Producto"] == "ACTIVO" else 1)
+                estado_e = st.selectbox(
+                    "Estado",
+                    ["ACTIVO", "INACTIVO"],
+                    index=0 if p_actual["Estado_Producto"] == "ACTIVO" else 1,
+                )
 
                 if st.form_submit_button("Actualizar Producto"):
-                    if nom_e:
+                    if nom_e.strip():
                         sql = """
                             UPDATE producto
                             SET Nombre = %s, Descripcion = %s, Unidad_Medida = %s, ID_Categoria = %s, Estado_Producto = %s
                             WHERE ID_Producto = %s
                         """
-                        if _ejecutar(get_connection, sql, (nom_e.strip(), desc_e.strip() or None, uni_e, cat_opts[cat_e], estado_e, p_actual["ID_Producto"])):
+                        params = (
+                            nom_e.strip(),
+                            desc_e.strip() or None,
+                            uni_e,
+                            cat_opts[cat_e],
+                            estado_e,
+                            p_actual["ID_Producto"],
+                        )
+                        if _ejecutar(get_connection, sql, params):
                             st.success("Producto actualizado.")
                             st.rerun()
                     else:
@@ -111,9 +138,12 @@ def _tab_productos(get_connection):
 
 def _tab_categorias(get_connection):
     st.subheader("Gestión de Categorías")
-    categorias = _consultar(get_connection, "SELECT ID_Categoria, Nombre, Descripcion FROM categoria ORDER BY ID_Categoria")
+    categorias = _consultar(
+        get_connection,
+        "SELECT ID_Categoria, Nombre, Descripcion FROM categoria ORDER BY ID_Categoria",
+    )
     if categorias:
-        st.dataframe(pd.DataFrame(categorias), use_container_width=True)
+        st.dataframe(pd.DataFrame(categorias), use_container_width=True, hide_index=True)
 
     c_crear, c_editar = st.columns(2)
     with c_crear:
@@ -122,10 +152,10 @@ def _tab_categorias(get_connection):
             nom_c = st.text_input("Nombre de la Categoría")
             desc_c = st.text_input("Descripción (opcional)")
             if st.form_submit_button("Guardar Categoría"):
-                if nom_c:
+                if nom_c.strip():
                     sql = "INSERT INTO categoria (Nombre, Descripcion) VALUES (%s, %s)"
                     if _ejecutar(get_connection, sql, (nom_c.strip(), desc_c.strip() or None)):
-                        st.success(f"Categoría '{nom_c}' creada.")
+                        st.success(f"Categoría '{nom_c.strip()}' creada.")
                         st.rerun()
                 else:
                     st.warning("El nombre de la categoría es obligatorio.")
@@ -140,7 +170,7 @@ def _tab_categorias(get_connection):
                 nom_ce = st.text_input("Nombre", value=c_actual["Nombre"])
                 desc_ce = st.text_input("Descripción", value=c_actual["Descripcion"] or "")
                 if st.form_submit_button("Actualizar Categoría"):
-                    if nom_ce:
+                    if nom_ce.strip():
                         sql = "UPDATE categoria SET Nombre = %s, Descripcion = %s WHERE ID_Categoria = %s"
                         if _ejecutar(get_connection, sql, (nom_ce.strip(), desc_ce.strip() or None, c_actual["ID_Categoria"])):
                             st.success("Categoría actualizada.")
@@ -165,7 +195,7 @@ def _tab_proveedores(get_connection):
         """,
     )
     if proveedores:
-        st.dataframe(pd.DataFrame(proveedores), use_container_width=True)
+        st.dataframe(pd.DataFrame(proveedores), use_container_width=True, hide_index=True)
 
     c_crear, c_editar = st.columns(2)
     with c_crear:
@@ -183,7 +213,7 @@ def _tab_proveedores(get_connection):
                 dir_pr = st.text_input("Dirección (opcional)")
 
                 if st.form_submit_button("Guardar Proveedor"):
-                    if nom_pr:
+                    if nom_pr.strip():
                         sql = """
                             INSERT INTO proveedor (ID_Tienda, Nombre, DUI_NIT, Telefono, Correo, Direccion)
                             VALUES (%s, %s, %s, %s, %s, %s)
@@ -197,7 +227,7 @@ def _tab_proveedores(get_connection):
                             dir_pr.strip() or None,
                         )
                         if _ejecutar(get_connection, sql, params):
-                            st.success(f"Proveedor '{nom_pr}' registrado.")
+                            st.success(f"Proveedor '{nom_pr.strip()}' registrado.")
                             st.rerun()
                     else:
                         st.warning("El nombre del proveedor es obligatorio.")
@@ -218,7 +248,7 @@ def _tab_proveedores(get_connection):
                 dir_pre = st.text_input("Dirección", value=pr_actual["Direccion"] or "")
 
                 if st.form_submit_button("Actualizar Proveedor"):
-                    if nom_pre:
+                    if nom_pre.strip():
                         sql = """
                             UPDATE proveedor
                             SET Nombre = %s, DUI_NIT = %s, Telefono = %s, Correo = %s, Direccion = %s
@@ -255,32 +285,45 @@ def _tab_usuarios(get_connection):
         """,
     )
     if usuarios:
-        st.dataframe(pd.DataFrame(usuarios), use_container_width=True)
+        st.dataframe(pd.DataFrame(usuarios), use_container_width=True, hide_index=True)
 
     c_crear, c_editar = st.columns(2)
+    rol_opts = {r["Nombre"]: r["ID_Rol"] for r in roles}
+    tienda_opts = {t["Nombre"]: t["ID_Tienda"] for t in tiendas}
+
     with c_crear:
         st.markdown("#### Crear Nuevo Usuario")
-        rol_opts = {r["Nombre"]: r["ID_Rol"] for r in roles}
-        tienda_opts = {t["Nombre"]: t["ID_Tienda"] for t in tiendas}
+        if not rol_opts or not tienda_opts:
+            st.warning("Debes tener roles y tiendas registradas para crear usuarios.")
+        else:
+            with st.form("form_user_crear"):
+                c1, c2 = st.columns(2)
+                nom_u = c1.text_input("Nombre Completo")
+                correo_u = c2.text_input("Correo Electrónico")
+                c3, c4 = st.columns(2)
+                pass_u = c3.text_input("Contraseña (se guardará encriptada)", type="password")
+                sel_rol = c4.selectbox("Rol del Usuario", list(rol_opts.keys()))
+                sel_tienda = st.selectbox("Asignar a Tienda/CD", list(tienda_opts.keys()))
 
-        with st.form("form_user_crear"):
-            c1, c2 = st.columns(2)
-            nom_u = c1.text_input("Nombre Completo")
-            correo_u = c2.text_input("Correo Electrónico")
-            c3, c4 = st.columns(2)
-            pass_u = c3.text_input("Contraseña (se guardará encriptada)", type="password")
-            sel_rol = c4.selectbox("Rol del Usuario", list(rol_opts.keys()))
-            sel_tienda = st.selectbox("Asignar a Tienda/CD", list(tienda_opts.keys()))
-
-            if st.form_submit_button("Crear Usuario"):
-                if nom_u and correo_u and pass_u:
-                    pass_hash = hashlib.sha256(pass_u.encode()).hexdigest()
-                    sql = "INSERT INTO usuario (Nombre, Correo, Password_Hash, ID_Rol, ID_Tienda) VALUES (%s, %s, %s, %s, %s)"
-                    if _ejecutar(get_connection, sql, (nom_u.strip(), correo_u.strip(), pass_hash, rol_opts[sel_rol], tienda_opts[sel_tienda])):
-                        st.success(f"Usuario {nom_u} creado exitosamente. Ya puede iniciar sesión.")
-                        st.rerun()
-                else:
-                    st.warning("Completa todos los datos del usuario.")
+                if st.form_submit_button("Crear Usuario"):
+                    if nom_u.strip() and correo_u.strip() and pass_u:
+                        pass_hash = hashlib.sha256(pass_u.encode()).hexdigest()
+                        sql = """
+                            INSERT INTO usuario (Nombre, Correo, Password_Hash, ID_Rol, ID_Tienda)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """
+                        params = (
+                            nom_u.strip(),
+                            correo_u.strip(),
+                            pass_hash,
+                            rol_opts[sel_rol],
+                            tienda_opts[sel_tienda],
+                        )
+                        if _ejecutar(get_connection, sql, params):
+                            st.success(f"Usuario {nom_u.strip()} creado exitosamente. Ya puede iniciar sesión.")
+                            st.rerun()
+                    else:
+                        st.warning("Completa todos los datos del usuario.")
 
     with c_editar:
         st.markdown("#### Editar Estado / Asignación")
@@ -296,20 +339,33 @@ def _tab_usuarios(get_connection):
                 idx_t = tienda_names.index(u_actual["Tienda"]) if u_actual["Tienda"] in tienda_names else 0
                 rol_ue = st.selectbox("Rol", rol_names, index=idx_r)
                 tienda_ue = st.selectbox("Tienda/CD", tienda_names, index=idx_t)
-                estado_ue = st.selectbox("Estado", ["ACTIVO", "INACTIVO"], index=0 if u_actual["Estado_Usuario"] == "ACTIVO" else 1)
+                estado_ue = st.selectbox(
+                    "Estado",
+                    ["ACTIVO", "INACTIVO"],
+                    index=0 if u_actual["Estado_Usuario"] == "ACTIVO" else 1,
+                )
 
                 if st.form_submit_button("Actualizar Usuario"):
                     sql = "UPDATE usuario SET ID_Rol = %s, ID_Tienda = %s, Estado_Usuario = %s WHERE ID_Usuario = %s"
-                    if _ejecutar(get_connection, sql, (rol_opts[rol_ue], tienda_opts[tienda_ue], estado_ue, u_actual["ID_Usuario"])):
+                    params = (
+                        rol_opts[rol_ue],
+                        tienda_opts[tienda_ue],
+                        estado_ue,
+                        u_actual["ID_Usuario"],
+                    )
+                    if _ejecutar(get_connection, sql, params):
                         st.success("Usuario actualizado.")
                         st.rerun()
 
 
 def _tab_tiendas(get_connection):
     st.subheader("Gestión de Tiendas / Sucursales")
-    tiendas = _consultar(get_connection, "SELECT ID_Tienda, Nombre, Tipo, Direccion, Telefono FROM tienda ORDER BY ID_Tienda")
+    tiendas = _consultar(
+        get_connection,
+        "SELECT ID_Tienda, Nombre, Tipo, Direccion, Telefono FROM tienda ORDER BY ID_Tienda",
+    )
     if tiendas:
-        st.dataframe(pd.DataFrame(tiendas), use_container_width=True)
+        st.dataframe(pd.DataFrame(tiendas), use_container_width=True, hide_index=True)
 
     c_crear, c_editar = st.columns(2)
     with c_crear:
@@ -322,10 +378,10 @@ def _tab_tiendas(get_connection):
             tel_t = st.text_input("Teléfono (opcional)")
 
             if st.form_submit_button("Crear Tienda"):
-                if nom_t:
+                if nom_t.strip():
                     sql = "INSERT INTO tienda (Nombre, Tipo, Direccion, Telefono) VALUES (%s, %s, %s, %s)"
                     if _ejecutar(get_connection, sql, (nom_t.strip(), tipo_t, dir_t.strip() or None, tel_t.strip() or None)):
-                        st.success(f"Sucursal '{nom_t}' habilitada en la red.")
+                        st.success(f"Sucursal '{nom_t.strip()}' habilitada en la red.")
                         st.rerun()
                 else:
                     st.warning("El nombre de la tienda es obligatorio.")
@@ -343,7 +399,7 @@ def _tab_tiendas(get_connection):
                 tel_te = st.text_input("Teléfono", value=t_actual["Telefono"] or "")
 
                 if st.form_submit_button("Actualizar Tienda"):
-                    if nom_te:
+                    if nom_te.strip():
                         sql = "UPDATE tienda SET Nombre = %s, Direccion = %s, Telefono = %s WHERE ID_Tienda = %s"
                         if _ejecutar(get_connection, sql, (nom_te.strip(), dir_te.strip() or None, tel_te.strip() or None, t_actual["ID_Tienda"])):
                             st.success("Tienda actualizada.")
