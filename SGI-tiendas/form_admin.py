@@ -352,12 +352,38 @@ def _tab_tiendas(get_connection):
                         st.warning("El nombre es obligatorio.")
 
 
+def _tab_costos(get_connection):
+    """Vista de solo lectura: último costo por producto y proveedor (tabla producto_proveedor)."""
+    st.subheader("Último costo por producto y proveedor")
+    st.caption(
+        "Se actualiza automáticamente cada vez que se registra una compra externa "
+        "(relación muchos a muchos entre producto y proveedor)."
+    )
+    filas = _consultar(
+        get_connection,
+        """
+        SELECT P.Cod_Producto, P.Nombre AS Producto, PR.Nombre AS Proveedor,
+               T.Nombre AS Tienda, PP.Ultimo_Costo, PP.Fecha_Ultimo_Costo
+        FROM producto_proveedor PP
+        JOIN producto P ON P.ID_Producto = PP.ID_Producto
+        JOIN proveedor PR ON PR.ID_Proveedor = PP.ID_Proveedor
+        JOIN tienda T ON T.ID_Tienda = PR.ID_Tienda
+        WHERE PP.Estado = 'ACTIVO'
+        ORDER BY P.Nombre, PP.Ultimo_Costo
+        """,
+    )
+    if filas:
+        st.dataframe(pd.DataFrame(filas), use_container_width=True, hide_index=True)
+    else:
+        st.info("Aún no hay costos registrados.")
+
+
 def pantalla_admin(get_connection):
     st.title("⚙️ Panel de Administración")
     st.markdown("Gestión de catálogos, proveedores, usuarios y sucursales.")
 
-    tab_prod, tab_cat, tab_prov, tab_user, tab_tienda = st.tabs(
-        ["📦 Productos", "🏷️ Categorías", "🚚 Proveedores", "👥 Usuarios", "🏪 Tiendas"]
+    tab_prod, tab_cat, tab_prov, tab_user, tab_tienda, tab_costos = st.tabs(
+        ["📦 Productos", "🏷️ Categorías", "🚚 Proveedores", "👥 Usuarios", "🏪 Tiendas", "💲 Costos"]
     )
 
     with tab_prod:
@@ -370,3 +396,5 @@ def pantalla_admin(get_connection):
         _tab_usuarios(get_connection)
     with tab_tienda:
         _tab_tiendas(get_connection)
+    with tab_costos:
+        _tab_costos(get_connection)
