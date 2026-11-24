@@ -12,8 +12,10 @@ from form_venta import ErrorNegocio
 
 SIN_VENCIMIENTO = date(9999, 12, 31)
 
+
 def _dec(valor):
     return Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
 
 def validar_linea(linea, hoy=None):
     hoy = hoy or date.today()
@@ -25,6 +27,7 @@ def validar_linea(linea, hoy=None):
         raise ErrorNegocio("No se puede ingresar un lote que ya está vencido.")
     if linea.get("precio_sugerido") is not None and _dec(linea["precio_sugerido"]) < 0:
         raise ErrorNegocio("El precio de venta sugerido no puede ser negativo.")
+
 
 def registrar_compra(conn, id_tienda, id_usuario, id_proveedor, lineas, hoy=None):
     if not lineas:
@@ -93,11 +96,15 @@ def registrar_compra(conn, id_tienda, id_usuario, id_proveedor, lineas, hoy=None
     finally:
         cur.close()
 
+
 def registrar_proveedor(conn, id_tienda, nombre, dui_nit, telefono, correo, direccion):
     nombre = (nombre or "").strip()
     if not nombre:
         raise ErrorNegocio("El nombre del proveedor es obligatorio.")
-    def _o_null(txt): return (txt or "").strip() or None
+
+    def _o_null(txt):
+        return (txt or "").strip() or None
+
     cur = conn.cursor()
     try:
         cur.execute(
@@ -113,6 +120,7 @@ def registrar_proveedor(conn, id_tienda, nombre, dui_nit, telefono, correo, dire
         raise
     finally:
         cur.close()
+
 
 def recibir_traslado_bd(conn, id_venta, id_tienda, id_usuario):
     cur = conn.cursor(dictionary=True)
@@ -194,6 +202,7 @@ def recibir_traslado_bd(conn, id_venta, id_tienda, id_usuario):
     finally:
         cur.close()
 
+
 def _consultar(get_connection, sql, params=()):
     conn = get_connection()
     if conn is None:
@@ -205,11 +214,20 @@ def _consultar(get_connection, sql, params=()):
     finally:
         conn.close()
 
+
 def _proveedores_de(get_connection, id_tienda):
-    return _consultar(get_connection, "SELECT ID_Proveedor, Nombre, DUI_NIT FROM proveedor WHERE ID_Tienda = %s AND ID_Tienda_CD IS NULL ORDER BY Nombre", (id_tienda,))
+    return _consultar(
+        get_connection,
+        "SELECT ID_Proveedor, Nombre, DUI_NIT FROM proveedor WHERE ID_Tienda = %s AND ID_Tienda_CD IS NULL ORDER BY Nombre",
+        (id_tienda,),
+    )
+
 
 def _catalogo_global(get_connection):
-    return _consultar(get_connection, "SELECT ID_Producto, Cod_Producto, Nombre, Unidad_Medida FROM producto WHERE Estado_Producto = 'ACTIVO' ORDER BY Nombre")
+    return _consultar(
+        get_connection,
+        "SELECT ID_Producto, Cod_Producto, Nombre, Unidad_Medida FROM producto WHERE Estado_Producto = 'ACTIVO' ORDER BY Nombre",
+    )
 
 
 # ----------------------------------- PANTALLA PRINCIPAL -----------------------------------
@@ -252,7 +270,10 @@ def pantalla_registrar_compra(get_connection):
         if not proveedores:
             st.info("Registre al menos un proveedor para poder ingresar compras.")
         else:
-            prov_opts = {f"{p['Nombre']}" + (f" ({p['DUI_NIT']})" if p["DUI_NIT"] else ""): p["ID_Proveedor"] for p in proveedores}
+            prov_opts = {
+                f"{p['Nombre']}" + (f" ({p['DUI_NIT']})" if p["DUI_NIT"] else ""): p["ID_Proveedor"]
+                for p in proveedores
+            }
             prov_label = st.selectbox("Proveedor", list(prov_opts.keys()))
 
             catalogo = _catalogo_global(get_connection)
@@ -262,9 +283,9 @@ def pantalla_registrar_compra(get_connection):
                 prod_opts = {f"{p['Cod_Producto']} · {p['Nombre']} ({p['Unidad_Medida']})": p for p in catalogo}
                 st.subheader("Productos de la compra")
                 a1, a2, a3 = st.columns([4, 1.5, 1.5])
-                prod = prod_opts[a1.selectbox("Producto", list(prod_opts.keys()))]
-                cantidad = a2.number_input("Cantidad", min_value=0.01, value=1.0, step=1.0)
-                precio = a3.number_input("Precio de compra", min_value=0.0, value=0.0, step=0.25)
+                prod = prod_opts[a1.selectbox("Producto", list(prod_opts.keys()), key="compra_prod")]
+                cantidad = a2.number_input("Cantidad", min_value=0.01, value=1.0, step=1.0, key="compra_cant")
+                precio = a3.number_input("Precio de compra", min_value=0.0, value=0.0, step=0.25, key="compra_precio")
 
                 # Referencia visual de último costo y precio actual en esta tienda
                 ref_costo = _consultar(
@@ -288,9 +309,6 @@ def pantalla_registrar_compra(get_connection):
                     else "⚠️ Nuevo en esta tienda (indica precio sugerido)"
                 )
                 st.caption(f"💡 Referencia · Último costo: **{txt_costo}** | Precio de venta actual: **{txt_precio}**")
-                prod = prod_opts[a1.selectbox("Producto", list(prod_opts.keys()))]
-                cantidad = a2.number_input("Cantidad", min_value=0.01, value=1.0, step=1.0)
-                precio = a3.number_input("Precio de compra", min_value=0.0, value=0.0, step=0.25)
 
                 b1, b2, b3 = st.columns([1.5, 2, 2.5])
                 vence = b1.checkbox("Tiene vencimiento")
@@ -298,7 +316,15 @@ def pantalla_registrar_compra(get_connection):
                 sugerido = b3.number_input("Precio sugerido (0 = no definir)", min_value=0.0, value=0.0, step=0.25)
 
                 if st.button("➕ Agregar a la compra"):
-                    linea = {"id_producto": prod["ID_Producto"], "nombre": prod["Nombre"], "unidad": prod["Unidad_Medida"], "cantidad": _dec(cantidad), "precio_compra": _dec(precio), "vencimiento": fecha_venc if vence else None, "precio_sugerido": _dec(sugerido) if sugerido > 0 else None}
+                    linea = {
+                        "id_producto": prod["ID_Producto"],
+                        "nombre": prod["Nombre"],
+                        "unidad": prod["Unidad_Medida"],
+                        "cantidad": _dec(cantidad),
+                        "precio_compra": _dec(precio),
+                        "vencimiento": fecha_venc if vence else None,
+                        "precio_sugerido": _dec(sugerido) if sugerido > 0 else None,
+                    }
                     try:
                         validar_linea(linea)
                         st.session_state.carrito_compra.append(linea)
@@ -309,7 +335,19 @@ def pantalla_registrar_compra(get_connection):
                 if not carrito:
                     st.caption("Aún no hay productos en la compra.")
                 else:
-                    filas = [{"#": i + 1, "Producto": l["nombre"], "Cantidad": float(l["cantidad"]), "Unidad": l["unidad"], "Precio compra": float(l["precio_compra"]), "Vence": l["vencimiento"].isoformat() if l["vencimiento"] else "—", "Precio venta sugerido": float(l["precio_sugerido"]) if l["precio_sugerido"] else None, "Subtotal": float(l["cantidad"] * l["precio_compra"])} for i, l in enumerate(carrito)]
+                    filas = [
+                        {
+                            "#": i + 1,
+                            "Producto": l["nombre"],
+                            "Cantidad": float(l["cantidad"]),
+                            "Unidad": l["unidad"],
+                            "Precio compra": float(l["precio_compra"]),
+                            "Vence": l["vencimiento"].isoformat() if l["vencimiento"] else "—",
+                            "Precio venta sugerido": float(l["precio_sugerido"]) if l["precio_sugerido"] else None,
+                            "Subtotal": float(l["cantidad"] * l["precio_compra"]),
+                        }
+                        for i, l in enumerate(carrito)
+                    ]
                     st.dataframe(pd.DataFrame(filas), use_container_width=True, hide_index=True)
                     total = sum((l["cantidad"] * l["precio_compra"] for l in carrito), Decimal("0"))
                     st.metric("Total de la compra", f"${total:,.2f}")
