@@ -493,10 +493,17 @@ elif menu == "🚨 Puntos de Reorden":
     if not df_reorden.empty:
         col_stock_tmp = next((c for c in df_reorden.columns if c.upper() in ['EXISTENCIAS', 'STOCK', 'STOCK_ACTUAL', 'CANTIDAD']), None)
         col_rop_tmp = next((c for c in df_reorden.columns if 'REORDEN' in c.upper() or 'MINIMO' in c.upper()), None)
+        if col_rop_tmp:
+            # Redondeo hacia arriba (techo / CEIL) para unidades enteras conservadoras
+            df_reorden[col_rop_tmp] = (
+                pd.to_numeric(df_reorden[col_rop_tmp], errors='coerce')
+                .fillna(0)
+                .apply(lambda x: int(-(-x // 1)))
+            )
         if col_stock_tmp and col_rop_tmp:
             df_reorden = df_reorden[
                 pd.to_numeric(df_reorden[col_stock_tmp], errors='coerce').fillna(0)
-                <= pd.to_numeric(df_reorden[col_rop_tmp], errors='coerce').fillna(0)
+                <= df_reorden[col_rop_tmp]
             ].copy()
 
     if not df_reorden.empty:
