@@ -626,6 +626,7 @@ elif menu == "💰 Análisis de Ventas":
     if not df_ventas.empty:
         col_fecha = next((col for col in df_ventas.columns if 'FECHA' in col.upper()), None)
         col_total = next((col for col in df_ventas.columns if col.upper() in ['TOTAL', 'MONTO', 'TOTAL_VENTA']), None)
+        inicio, fin = hace_un_mes, hoy
         if col_fecha:
             df_ventas[col_fecha] = pd.to_datetime(df_ventas[col_fecha])
             with st.form("form_filtro_ventas"):
@@ -647,6 +648,35 @@ elif menu == "💰 Análisis de Ventas":
                 st.subheader("📈 Tendencia de Ingresos")
                 st.line_chart(df_ventas.groupby(col_fecha)[col_total].sum().reset_index(), x=col_fecha, y=col_total)
                 st.metric("Total Acumulado", f"${df_ventas[col_total].sum():,.2f}")
+
+            # --- Top 10 productos más vendidos por sucursal ---
+            sql_top_v = """
+                SELECT P.Nombre AS Producto,
+                       T.Nombre AS Tienda,
+                       SUM(DV.Cantidad) AS Unidades_Vendidas
+                FROM detalle_venta DV
+                JOIN venta V ON DV.ID_Venta = V.ID_Venta
+                JOIN inventario I ON DV.ID_Inventario = I.ID_Inventario
+                JOIN producto P ON I.ID_Producto = P.ID_Producto
+                JOIN tienda T ON V.ID_Tienda = T.ID_Tienda
+                WHERE DATE(V.Fecha_Venta) BETWEEN %s AND %s
+            """
+            if rol == 'ADMINISTRADOR':
+                df_top_v = run_query(sql_top_v + " GROUP BY P.Nombre, T.Nombre;", (inicio, fin))
+            else:
+                df_top_v = run_query(sql_top_v + " AND V.ID_Tienda = %s GROUP BY P.Nombre, T.Nombre;", (inicio, fin, id_tienda))
+
+            if not df_top_v.empty:
+                top10 = df_top_v.groupby("Producto")["Unidades_Vendidas"].sum().nlargest(10).index
+                df_top_v = df_top_v[df_top_v["Producto"].isin(top10)]
+                st.subheader("🏆 Top 10 Productos Más Vendidos" + (" por Sucursal" if rol == 'ADMINISTRADOR' else ""))
+                st.bar_chart(
+                    df_top_v,
+                    x="Producto",
+                    y="Unidades_Vendidas",
+                    color="Tienda" if rol == 'ADMINISTRADOR' else "Producto"
+                )
+
             st.dataframe(df_ventas, use_container_width=True, hide_index=True)
             boton_exportar(df_ventas, "Reporte_Ventas")
     else:
