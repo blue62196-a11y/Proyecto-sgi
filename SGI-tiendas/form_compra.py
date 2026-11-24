@@ -266,6 +266,32 @@ def pantalla_registrar_compra(get_connection):
                 cantidad = a2.number_input("Cantidad", min_value=0.01, value=1.0, step=1.0)
                 precio = a3.number_input("Precio de compra", min_value=0.0, value=0.0, step=0.25)
 
+                # Referencia visual de último costo y precio actual en esta tienda
+                ref_costo = _consultar(
+                    get_connection,
+                    "SELECT Ultimo_Costo FROM producto_proveedor WHERE ID_Producto = %s AND ID_Proveedor = %s LIMIT 1",
+                    (prod["ID_Producto"], prov_opts[prov_label]),
+                )
+                ref_precio = _consultar(
+                    get_connection,
+                    "SELECT Precio_Venta FROM producto_tienda WHERE ID_Tienda = %s AND ID_Producto = %s LIMIT 1",
+                    (id_tienda, prod["ID_Producto"]),
+                )
+                txt_costo = (
+                    f"${ref_costo[0]['Ultimo_Costo']:,.2f}"
+                    if ref_costo and ref_costo[0]["Ultimo_Costo"] is not None
+                    else "Sin historial con este proveedor"
+                )
+                txt_precio = (
+                    f"${ref_precio[0]['Precio_Venta']:,.2f}"
+                    if ref_precio and ref_precio[0]["Precio_Venta"] is not None
+                    else "⚠️ Nuevo en esta tienda (indica precio sugerido)"
+                )
+                st.caption(f"💡 Referencia · Último costo: **{txt_costo}** | Precio de venta actual: **{txt_precio}**")
+                prod = prod_opts[a1.selectbox("Producto", list(prod_opts.keys()))]
+                cantidad = a2.number_input("Cantidad", min_value=0.01, value=1.0, step=1.0)
+                precio = a3.number_input("Precio de compra", min_value=0.0, value=0.0, step=0.25)
+
                 b1, b2, b3 = st.columns([1.5, 2, 2.5])
                 vence = b1.checkbox("Tiene vencimiento")
                 fecha_venc = b2.date_input("Fecha de vencimiento", value=date.today(), min_value=date.today(), disabled=not vence)
